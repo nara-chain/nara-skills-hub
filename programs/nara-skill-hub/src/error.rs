@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 
 #[error_code]
 pub enum SkillHubError {
-    #[msg("Name too long: max 32 bytes")]
-    NameTooLong,
+    #[msg("Name too short: min 5 bytes")]
+    NameTooShort,
     #[msg("Description too long: max 512 bytes")]
     DescriptionTooLong,
     #[msg("Unauthorized")]
@@ -34,4 +34,6 @@ pub enum SkillHubError {
     ContentNotFound,
     #[msg("Cannot perform this operation while a pending buffer exists")]
     HasPendingBuffer,
+    #[msg("Fee recipient does not match config.fee_recipient")]
+    InvalidFeeRecipient,
 }

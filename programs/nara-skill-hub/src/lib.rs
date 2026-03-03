@@ -8,11 +8,28 @@ pub mod state;
 
 use instructions::*;
 
-pub const MAX_NAME_LEN: usize = 32;
+pub const MIN_NAME_LEN: usize = 5;
+pub const DEFAULT_REGISTER_FEE: u64 = 1_000_000_000; // 1 SOL in lamports
 
 #[program]
 pub mod nara_skill_hub {
     use super::*;
+
+    pub fn init_config(ctx: Context<InitConfig>) -> Result<()> {
+        instructions::init_config::init_config(ctx)
+    }
+
+    pub fn update_admin(ctx: Context<UpdateAdmin>, new_admin: Pubkey) -> Result<()> {
+        instructions::update_admin::update_admin(ctx, new_admin)
+    }
+
+    pub fn update_fee_recipient(ctx: Context<UpdateFeeRecipient>, new_recipient: Pubkey) -> Result<()> {
+        instructions::update_fee_recipient::update_fee_recipient(ctx, new_recipient)
+    }
+
+    pub fn update_register_fee(ctx: Context<UpdateRegisterFee>, new_fee: u64) -> Result<()> {
+        instructions::update_register_fee::update_register_fee(ctx, new_fee)
+    }
 
     pub fn register_skill(ctx: Context<RegisterSkill>, name: String) -> Result<()> {
         instructions::register_skill::register_skill(ctx, name)

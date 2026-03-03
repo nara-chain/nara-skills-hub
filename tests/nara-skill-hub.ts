@@ -12,6 +12,7 @@ import { expect } from "chai";
 // ── Constants matching Rust ───────────────────────────────────────────────────
 const SKILL_BUFFER_HEADER = 80; // 8 disc + 32 authority + 32 skill + 4 total_len + 4 write_offset
 const SKILL_CONTENT_HEADER = 72; // 8 disc + 32 authority + 32 skill
+const ONE_SOL = new anchor.BN(1_000_000_000);
 
 describe("nara-skill-hub", () => {
   const provider = anchor.AnchorProvider.env();
@@ -32,6 +33,12 @@ describe("nara-skill-hub", () => {
       program.programId
     )[0];
 
+  const configPDA = (): PublicKey =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("config")],
+      program.programId
+    )[0];
+
   // ── Utility: create a raw account owned by the program ──────────────────
   async function createProgramAccount(kp: Keypair, size: number) {
     const lamports =
@@ -48,22 +55,154 @@ describe("nara-skill-hub", () => {
     await provider.sendAndConfirm(tx, [kp]);
   }
 
+  // ── Helper: register a skill with config + feeRecipient ─────────────────
+  async function doRegisterSkill(
+    name: string,
+    feeRecipient: PublicKey = authority.publicKey
+  ) {
+    await program.methods
+      .registerSkill(name)
+      .accounts({
+        authority: authority.publicKey,
+        skill: skillPDA(name),
+        config: configPDA(),
+        feeRecipient,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  // ── One-time program init ────────────────────────────────────────────────
+  before(async () => {
+    await program.methods
+      .initConfig()
+      .accounts({
+        admin: authority.publicKey,
+        config: configPDA(),
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  });
+
+  // ── program_config ────────────────────────────────────────────────────────
+  describe("program_config", () => {
+    it("initializes with admin and 1 SOL default fee", async () => {
+      const cfg = await program.account.programConfig.fetch(configPDA());
+      expect(cfg.admin.toBase58()).to.eq(authority.publicKey.toBase58());
+      expect(cfg.registerFee.eq(ONE_SOL)).to.be.true;
+      expect(cfg.feeRecipient.toBase58()).to.eq(authority.publicKey.toBase58());
+    });
+
+    it("update_register_fee: admin can update", async () => {
+      await program.methods
+        .updateRegisterFee(new anchor.BN(0))
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+      let cfg = await program.account.programConfig.fetch(configPDA());
+      expect(cfg.registerFee.toNumber()).to.eq(0);
+
+      // Restore to 1 SOL
+      await program.methods
+        .updateRegisterFee(ONE_SOL)
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+      cfg = await program.account.programConfig.fetch(configPDA());
+      expect(cfg.registerFee.eq(ONE_SOL)).to.be.true;
+    });
+
+    it("update_fee_recipient: admin can change and reset", async () => {
+      const newRecipient = Keypair.generate();
+      await program.methods
+        .updateFeeRecipient(newRecipient.publicKey)
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+      let cfg = await program.account.programConfig.fetch(configPDA());
+      expect(cfg.feeRecipient.toBase58()).to.eq(
+        newRecipient.publicKey.toBase58()
+      );
+
+      // Reset to authority
+      await program.methods
+        .updateFeeRecipient(authority.publicKey)
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+    });
+
+    it("rejects non-admin on update_register_fee", async () => {
+      const other = Keypair.generate();
+      try {
+        await program.methods
+          .updateRegisterFee(new anchor.BN(0))
+          .accounts({ admin: other.publicKey, config: configPDA() })
+          .signers([other])
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
+      }
+    });
+
+    it("rejects non-admin on update_fee_recipient", async () => {
+      const other = Keypair.generate();
+      try {
+        await program.methods
+          .updateFeeRecipient(other.publicKey)
+          .accounts({ admin: other.publicKey, config: configPDA() })
+          .signers([other])
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
+      }
+    });
+
+    it("collects fee when fee_recipient differs from authority", async () => {
+      const recipient = Keypair.generate();
+      // Fund recipient so it can receive lamports
+      const sig = await provider.connection.requestAirdrop(
+        recipient.publicKey,
+        web3.LAMPORTS_PER_SOL
+      );
+      await provider.connection.confirmTransaction(sig);
+
+      const smallFee = new anchor.BN(10_000_000); // 0.01 SOL
+      await program.methods
+        .updateRegisterFee(smallFee)
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+      await program.methods
+        .updateFeeRecipient(recipient.publicKey)
+        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .rpc();
+
+      try {
+        const before = await provider.connection.getBalance(recipient.publicKey);
+        // Pass recipient.publicKey so it matches config.fee_recipient
+        await doRegisterSkill("fee-test-01", recipient.publicKey);
+        const after = await provider.connection.getBalance(recipient.publicKey);
+        expect(after - before).to.eq(10_000_000);
+      } finally {
+        // Always restore config regardless of test outcome
+        await program.methods
+          .updateRegisterFee(ONE_SOL)
+          .accounts({ admin: authority.publicKey, config: configPDA() })
+          .rpc();
+        await program.methods
+          .updateFeeRecipient(authority.publicKey)
+          .accounts({ admin: authority.publicKey, config: configPDA() })
+          .rpc();
+      }
+    });
+  });
+
   // ── register_skill ────────────────────────────────────────────────────────
   describe("register_skill", () => {
     const NAME = "test-skill-01";
 
     it("creates a new SkillRecord PDA", async () => {
-      const skillKey = skillPDA(NAME);
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
 
-      const skill = await program.account.skillRecord.fetch(skillKey);
+      const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.authority.toBase58()).to.eq(authority.publicKey.toBase58());
       expect(skill.name).to.eq(NAME);
       expect(skill.pendingBuffer).to.be.null;
@@ -71,40 +210,20 @@ describe("nara-skill-hub", () => {
     });
 
     it("rejects duplicate names", async () => {
-      const skillKey = skillPDA(NAME);
       try {
-        await program.methods
-          .registerSkill(NAME)
-          .accounts({
-            authority: authority.publicKey,
-            skill: skillKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
+        await doRegisterSkill(NAME);
         expect.fail("expected error");
       } catch (_) {
         // Expected: account already in use
       }
     });
 
-    it("rejects names longer than 32 bytes", async () => {
-      const longName = "a".repeat(33);
+    it("rejects names shorter than 5 bytes (NameTooShort)", async () => {
       try {
-        // findProgramAddressSync also rejects seeds > 32 bytes, so the
-        // error may come from PDA derivation before the RPC call is made.
-        const skillKey = skillPDA(longName);
-        await program.methods
-          .registerSkill(longName)
-          .accounts({
-            authority: authority.publicKey,
-            skill: skillKey,
-            systemProgram: SystemProgram.programId,
-          })
-          .rpc();
+        await doRegisterSkill("abcd"); // 4 chars < 5 minimum
         expect.fail("expected error");
       } catch (e: any) {
-        if (e.message === "expected error") throw e;
-        // Either Solana rejects the seed (>32 bytes) or program returns NameTooLong
+        expect(e.error?.errorCode?.code ?? e.message).to.include("NameTooShort");
       }
     });
   });
@@ -114,14 +233,7 @@ describe("nara-skill-hub", () => {
     const NAME = "desc-skill-01";
 
     before(async () => {
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
     });
 
     it("creates the description PDA on first call", async () => {
@@ -205,14 +317,7 @@ describe("nara-skill-hub", () => {
     const newOwner = Keypair.generate();
 
     before(async () => {
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
     });
 
     it("transfers authority to a new pubkey", async () => {
@@ -244,14 +349,7 @@ describe("nara-skill-hub", () => {
       const bufKp = Keypair.generate();
       const skillKey = skillPDA(name);
 
-      await program.methods
-        .registerSkill(name)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillKey,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(name);
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 10);
       await program.methods
         .initBuffer(name, 10)
@@ -301,14 +399,7 @@ describe("nara-skill-hub", () => {
     );
 
     before(async () => {
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
     });
 
     it("init_buffer → write ×2 → finalize_skill_new stores correct bytes", async () => {
@@ -393,14 +484,7 @@ describe("nara-skill-hub", () => {
 
     before(async () => {
       bufferKp = Keypair.generate();
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
       await createProgramAccount(bufferKp, SKILL_BUFFER_HEADER + 100);
       await program.methods
         .initBuffer(NAME, 100)
@@ -484,14 +568,7 @@ describe("nara-skill-hub", () => {
 
     before(async () => {
       const bufKp = Keypair.generate();
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 50);
       await program.methods
         .initBuffer(NAME, 50)
@@ -531,14 +608,7 @@ describe("nara-skill-hub", () => {
 
     before(async () => {
       buf1 = Keypair.generate();
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
       await createProgramAccount(buf1, SKILL_BUFFER_HEADER + 64);
       await program.methods
         .initBuffer(NAME, 64)
@@ -622,14 +692,7 @@ describe("nara-skill-hub", () => {
     before(async () => {
       bufKp = Keypair.generate();
       contentKp = Keypair.generate();
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + TOTAL_LEN);
       await program.methods
         .initBuffer(NAME, TOTAL_LEN)
@@ -696,14 +759,7 @@ describe("nara-skill-hub", () => {
       contentV1Kp = Keypair.generate();
       const bufKp = Keypair.generate();
 
-      await program.methods
-        .registerSkill(NAME)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(NAME),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(NAME);
 
       // Upload v1
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + V1.length);
@@ -848,14 +904,7 @@ describe("nara-skill-hub", () => {
       const dummyOldContent = Keypair.generate();
       const data = Buffer.from("hello");
 
-      await program.methods
-        .registerSkill(emptyName)
-        .accounts({
-          authority: authority.publicKey,
-          skill: skillPDA(emptyName),
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await doRegisterSkill(emptyName);
       await createProgramAccount(bufKp2, SKILL_BUFFER_HEADER + data.length);
       await program.methods
         .initBuffer(emptyName, data.length)

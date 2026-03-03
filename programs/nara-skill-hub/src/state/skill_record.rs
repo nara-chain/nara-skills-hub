@@ -9,7 +9,7 @@ pub struct SkillRecord {
     pub authority: Pubkey,
     /// PDA bump stored for efficient re-validation.
     pub bump: u8,
-    /// Globally unique name (max 32 bytes).
+    /// Globally unique name (min 4 bytes, max 32 bytes enforced by Solana PDA seed limit).
     pub name: String,
     /// Active upload buffer, if any. Must be closed before starting a new one.
     pub pending_buffer: Option<Pubkey>,
@@ -18,13 +18,13 @@ pub struct SkillRecord {
 }
 
 impl SkillRecord {
-    /// Byte size for `init` space calculation.
+    /// Byte size for `init` space calculation (allocates exactly what the name needs).
     pub fn space(name_len: usize) -> usize {
-        8       // discriminator
-        + 32    // authority
-        + 1     // bump
+        8           // discriminator
+        + 32        // authority
+        + 1         // bump
         + 4 + name_len  // name (String: u32 prefix + bytes)
-        + 1 + 32        // Option<Pubkey>
-        + 32    // content
+        + 1 + 32    // Option<Pubkey>
+        + 32        // content
     }
 }
