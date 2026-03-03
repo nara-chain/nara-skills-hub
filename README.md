@@ -5,7 +5,7 @@
 
 `Nara Skill Hub` is an on-chain registry built with Solana + Anchor 0.32.1 for registering, versioning, updating, discovering, and governing AI agent skills.
 
-- **Program ID**: `54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU`
+- **Program ID**: `SkiLLHub11111111111111111111111111111111111`
 - **Positioning Keywords**: Skill Assetization / Prompt Liquidity / On-chain Capability Layer / Verifiable Agent Infrastructure
 
 ---
