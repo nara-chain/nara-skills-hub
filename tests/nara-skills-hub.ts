@@ -69,7 +69,7 @@ describe("nara-skills-hub", () => {
   ) {
     await program.methods
       .registerSkill(name, author)
-      .accounts({
+      .accountsStrict({
         authority: authority.publicKey,
         skill: skillPDA(name),
         config: configPDA(),
@@ -83,7 +83,7 @@ describe("nara-skills-hub", () => {
   before(async () => {
     await program.methods
       .initConfig()
-      .accounts({
+      .accountsStrict({
         admin: authority.publicKey,
         config: configPDA(),
         systemProgram: SystemProgram.programId,
@@ -103,7 +103,7 @@ describe("nara-skills-hub", () => {
     it("update_register_fee: admin can update", async () => {
       await program.methods
         .updateRegisterFee(new anchor.BN(0))
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
       let cfg = await program.account.programConfig.fetch(configPDA());
       expect(cfg.registerFee.toNumber()).to.eq(0);
@@ -111,7 +111,7 @@ describe("nara-skills-hub", () => {
       // Restore to 1 SOL
       await program.methods
         .updateRegisterFee(ONE_SOL)
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
       cfg = await program.account.programConfig.fetch(configPDA());
       expect(cfg.registerFee.eq(ONE_SOL)).to.be.true;
@@ -121,7 +121,7 @@ describe("nara-skills-hub", () => {
       const newRecipient = Keypair.generate();
       await program.methods
         .updateFeeRecipient(newRecipient.publicKey)
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
       let cfg = await program.account.programConfig.fetch(configPDA());
       expect(cfg.feeRecipient.toBase58()).to.eq(
@@ -131,7 +131,7 @@ describe("nara-skills-hub", () => {
       // Reset to authority
       await program.methods
         .updateFeeRecipient(authority.publicKey)
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
     });
 
@@ -140,7 +140,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .updateRegisterFee(new anchor.BN(0))
-          .accounts({ admin: other.publicKey, config: configPDA() })
+          .accountsStrict({ admin: other.publicKey, config: configPDA() })
           .signers([other])
           .rpc();
         expect.fail("expected error");
@@ -154,7 +154,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .updateFeeRecipient(other.publicKey)
-          .accounts({ admin: other.publicKey, config: configPDA() })
+          .accountsStrict({ admin: other.publicKey, config: configPDA() })
           .signers([other])
           .rpc();
         expect.fail("expected error");
@@ -175,11 +175,11 @@ describe("nara-skills-hub", () => {
       const smallFee = new anchor.BN(10_000_000); // 0.01 SOL
       await program.methods
         .updateRegisterFee(smallFee)
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
       await program.methods
         .updateFeeRecipient(recipient.publicKey)
-        .accounts({ admin: authority.publicKey, config: configPDA() })
+        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
 
       try {
@@ -192,11 +192,11 @@ describe("nara-skills-hub", () => {
         // Always restore config regardless of test outcome
         await program.methods
           .updateRegisterFee(ONE_SOL)
-          .accounts({ admin: authority.publicKey, config: configPDA() })
+          .accountsStrict({ admin: authority.publicKey, config: configPDA() })
           .rpc();
         await program.methods
           .updateFeeRecipient(authority.publicKey)
-          .accounts({ admin: authority.publicKey, config: configPDA() })
+          .accountsStrict({ admin: authority.publicKey, config: configPDA() })
           .rpc();
       }
     });
@@ -261,7 +261,7 @@ describe("nara-skills-hub", () => {
       const desc = "Writes beautiful haiku poems on demand.";
       await program.methods
         .setDescription(NAME, desc)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           descriptionAccount: descPDA(skillKey),
@@ -278,7 +278,7 @@ describe("nara-skills-hub", () => {
       const newDesc = "Short haiku generator.";
       await program.methods
         .setDescription(NAME, newDesc)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           descriptionAccount: descPDA(skillKey),
@@ -296,7 +296,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .setDescription(NAME, "evil description")
-          .accounts({
+          .accountsStrict({
             authority: other.publicKey,
             skill: skillKey,
             descriptionAccount: descPDA(skillKey),
@@ -315,7 +315,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .setDescription(NAME, "x".repeat(513))
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillKey,
             descriptionAccount: descPDA(skillKey),
@@ -344,7 +344,7 @@ describe("nara-skills-hub", () => {
       const json = JSON.stringify({ tags: ["ai", "poetry"], lang: "en" });
       await program.methods
         .updateMetadata(NAME, json)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           metadata: metaPDA(skillKey),
@@ -361,7 +361,7 @@ describe("nara-skills-hub", () => {
       const updated = JSON.stringify({ tags: ["ai"], lang: "zh", version: 2 });
       await program.methods
         .updateMetadata(NAME, updated)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           metadata: metaPDA(skillKey),
@@ -379,7 +379,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .updateMetadata(NAME, "{}")
-          .accounts({
+          .accountsStrict({
             authority: other.publicKey,
             skill: skillKey,
             metadata: metaPDA(skillKey),
@@ -398,7 +398,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .updateMetadata(NAME, "x".repeat(801))
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillKey,
             metadata: metaPDA(skillKey),
@@ -425,7 +425,7 @@ describe("nara-skills-hub", () => {
       const skillKey = skillPDA(NAME);
       await program.methods
         .transferAuthority(NAME, newOwner.publicKey)
-        .accounts({ authority: authority.publicKey, skill: skillKey })
+        .accountsStrict({ authority: authority.publicKey, skill: skillKey })
         .rpc();
 
       const skill = await program.account.skillRecord.fetch(skillKey);
@@ -437,7 +437,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .transferAuthority(NAME, authority.publicKey)
-          .accounts({ authority: authority.publicKey, skill: skillKey })
+          .accountsStrict({ authority: authority.publicKey, skill: skillKey })
           .rpc();
         expect.fail("expected error");
       } catch (e: any) {
@@ -454,7 +454,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 10);
       await program.methods
         .initBuffer(name, 10)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufKp.publicKey,
@@ -464,7 +464,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .transferAuthority(name, Keypair.generate().publicKey)
-          .accounts({ authority: authority.publicKey, skill: skillKey })
+          .accountsStrict({ authority: authority.publicKey, skill: skillKey })
           .rpc();
         expect.fail("expected error");
       } catch (e: any) {
@@ -476,7 +476,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(name)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufKp.publicKey,
@@ -515,7 +515,7 @@ describe("nara-skills-hub", () => {
       // init_buffer
       await program.methods
         .initBuffer(NAME, totalLen)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufferKp.publicKey,
@@ -531,7 +531,7 @@ describe("nara-skills-hub", () => {
       const mid = Math.floor(totalLen / 2);
       await program.methods
         .writeToBuffer(NAME, 0, CONTENT.slice(0, mid))
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufferKp.publicKey,
@@ -540,7 +540,7 @@ describe("nara-skills-hub", () => {
 
       await program.methods
         .writeToBuffer(NAME, mid, CONTENT.slice(mid))
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufferKp.publicKey,
@@ -553,7 +553,7 @@ describe("nara-skills-hub", () => {
       // finalize_skill_new
       await program.methods
         .finalizeSkillNew(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufferKp.publicKey,
@@ -590,7 +590,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufferKp, SKILL_BUFFER_HEADER + 100);
       await program.methods
         .initBuffer(NAME, 100)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufferKp.publicKey,
@@ -602,7 +602,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .writeToBuffer(NAME, 10, Buffer.alloc(10))
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: bufferKp.publicKey,
@@ -617,7 +617,7 @@ describe("nara-skills-hub", () => {
     it("write at offset 0 succeeds and advances cursor to 10", async () => {
       await program.methods
         .writeToBuffer(NAME, 0, Buffer.alloc(10))
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufferKp.publicKey,
@@ -632,7 +632,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .writeToBuffer(NAME, 0, Buffer.alloc(10))
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: bufferKp.publicKey,
@@ -649,7 +649,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .writeToBuffer(NAME, 10, Buffer.alloc(95))
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: bufferKp.publicKey,
@@ -674,7 +674,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 50);
       await program.methods
         .initBuffer(NAME, 50)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -688,7 +688,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .initBuffer(NAME, 50)
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: buf2.publicKey,
@@ -714,7 +714,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(buf1, SKILL_BUFFER_HEADER + 64);
       await program.methods
         .initBuffer(NAME, 64)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf1.publicKey,
@@ -727,7 +727,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .closeBuffer(NAME)
-          .accounts({
+          .accountsStrict({
             authority: other.publicKey,
             skill: skillPDA(NAME),
             buffer: buf1.publicKey,
@@ -744,7 +744,7 @@ describe("nara-skills-hub", () => {
     it("closes buffer and clears pending_buffer", async () => {
       await program.methods
         .closeBuffer(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf1.publicKey,
@@ -761,7 +761,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(buf2, SKILL_BUFFER_HEADER + 32);
       await program.methods
         .initBuffer(NAME, 32)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf2.publicKey,
@@ -774,7 +774,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf2.publicKey,
@@ -798,7 +798,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + TOTAL_LEN);
       await program.methods
         .initBuffer(NAME, TOTAL_LEN)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -807,7 +807,7 @@ describe("nara-skills-hub", () => {
       // Write only half — buffer remains incomplete
       await program.methods
         .writeToBuffer(NAME, 0, Buffer.alloc(10))
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -820,7 +820,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .finalizeSkillNew(NAME)
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: bufKp.publicKey,
@@ -838,7 +838,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -867,7 +867,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + V1.length);
       await program.methods
         .initBuffer(NAME, V1.length)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -875,7 +875,7 @@ describe("nara-skills-hub", () => {
         .rpc();
       await program.methods
         .writeToBuffer(NAME, 0, V1)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -884,7 +884,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(contentV1Kp, SKILL_CONTENT_HEADER + V1.length);
       await program.methods
         .finalizeSkillNew(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -901,7 +901,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufV2Kp, SKILL_BUFFER_HEADER + V2.length);
       await program.methods
         .initBuffer(NAME, V2.length)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufV2Kp.publicKey,
@@ -909,7 +909,7 @@ describe("nara-skills-hub", () => {
         .rpc();
       await program.methods
         .writeToBuffer(NAME, 0, V2)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufV2Kp.publicKey,
@@ -919,7 +919,7 @@ describe("nara-skills-hub", () => {
 
       await program.methods
         .finalizeSkillUpdate(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufV2Kp.publicKey,
@@ -954,7 +954,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + tiny.length);
       await program.methods
         .initBuffer(NAME, tiny.length)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -962,7 +962,7 @@ describe("nara-skills-hub", () => {
         .rpc();
       await program.methods
         .writeToBuffer(NAME, 0, tiny)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -973,7 +973,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .finalizeSkillNew(NAME)
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(NAME),
             buffer: bufKp.publicKey,
@@ -991,7 +991,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -1011,7 +1011,7 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp2, SKILL_BUFFER_HEADER + data.length);
       await program.methods
         .initBuffer(emptyName, data.length)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(emptyName),
           buffer: bufKp2.publicKey,
@@ -1019,7 +1019,7 @@ describe("nara-skills-hub", () => {
         .rpc();
       await program.methods
         .writeToBuffer(emptyName, 0, data)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(emptyName),
           buffer: bufKp2.publicKey,
@@ -1033,7 +1033,7 @@ describe("nara-skills-hub", () => {
         // on the skill account before old_content is validated.
         await program.methods
           .finalizeSkillUpdate(emptyName)
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillPDA(emptyName),
             buffer: bufKp2.publicKey,
@@ -1052,7 +1052,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(emptyName)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(emptyName),
           buffer: bufKp2.publicKey,
@@ -1077,7 +1077,7 @@ describe("nara-skills-hub", () => {
       // Set description and metadata.
       await program.methods
         .setDescription(NAME, "A skill that will be deleted.")
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           descriptionAccount: descPDA(skillPDA(NAME)),
@@ -1087,7 +1087,7 @@ describe("nara-skills-hub", () => {
 
       await program.methods
         .updateMetadata(NAME, JSON.stringify({ tag: "temp" }))
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           metadata: metaPDA(skillPDA(NAME)),
@@ -1099,16 +1099,16 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + CONTENT.length);
       await program.methods
         .initBuffer(NAME, CONTENT.length)
-        .accounts({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
         .rpc();
       await program.methods
         .writeToBuffer(NAME, 0, CONTENT)
-        .accounts({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
         .rpc();
       await createProgramAccount(contentKp, SKILL_CONTENT_HEADER + CONTENT.length);
       await program.methods
         .finalizeSkillNew(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
@@ -1123,7 +1123,7 @@ describe("nara-skills-hub", () => {
 
       await program.methods
         .deleteSkill(NAME)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           description: descPDA(skillKey),
@@ -1154,7 +1154,7 @@ describe("nara-skills-hub", () => {
       try {
         await program.methods
           .deleteSkill(NAME)
-          .accounts({
+          .accountsStrict({
             authority: other.publicKey,
             skill: skillKey,
             description: descPDA(skillKey),
@@ -1179,13 +1179,13 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 10);
       await program.methods
         .initBuffer(NAME3, 10)
-        .accounts({ authority: authority.publicKey, skill: skillKey, buffer: bufKp.publicKey })
+        .accountsStrict({ authority: authority.publicKey, skill: skillKey, buffer: bufKp.publicKey })
         .rpc();
 
       try {
         await program.methods
           .deleteSkill(NAME3)
-          .accounts({
+          .accountsStrict({
             authority: authority.publicKey,
             skill: skillKey,
             description: descPDA(skillKey),
@@ -1202,7 +1202,7 @@ describe("nara-skills-hub", () => {
       // Cleanup
       await program.methods
         .closeBuffer(NAME3)
-        .accounts({
+        .accountsStrict({
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufKp.publicKey,
