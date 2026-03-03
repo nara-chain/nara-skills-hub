@@ -1,6 +1,6 @@
 # Nara Skill Hub
 
-A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skills** — prompt texts that teach AI agents how to perform tasks. Skill names are globally unique. The program supports descriptions, authority transfers, and resumable chunked uploads for large content.
+A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skills** — prompt texts that teach AI agents how to perform tasks. Skill names are globally unique. The program supports descriptions, authority transfers, configurable registration fees, and resumable chunked uploads for large content.
 
 **Program ID:** `54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU`
 
@@ -12,59 +12,7 @@ A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skil
 - **Fixed-header structs, raw trailing bytes** — no `Vec<u8>` fields; content bytes are written directly after the header at a known offset.
 - **Resumable uploads** — `write_to_buffer` enforces a strict sequential offset, enabling the client to resume from the last acknowledged `write_offset` after a failed transaction.
 - **One active buffer per skill** — a new buffer cannot be initialized until the existing one is closed or finalized.
-
----
-
-## Account Structures
-
-### `SkillRecord` — PDA
-seeds: `[b"skill", name.as_bytes()]`
-
-Small metadata account created by the program. Holds the authority, a pointer to the active `SkillContent` account, and an optional pending-buffer pointer.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `authority` | `Pubkey` | Who may update this skill |
-| `bump` | `u8` | PDA bump |
-| `name` | `String` | Globally unique name (max 32 bytes) |
-| `pending_buffer` | `Option<Pubkey>` | Active upload buffer, if any |
-| `content` | `Pubkey` | Current `SkillContent` account (`Pubkey::default` = none) |
-
-### `SkillContent` — client-created keypair
-Fixed header (72 bytes) + raw content bytes.
-
-| Offset | Field | Size |
-|--------|-------|------|
-| 0 | discriminator | 8 |
-| 8 | `authority` | 32 |
-| 40 | `skill` (SkillRecord pubkey) | 32 |
-| 72 | raw content bytes | `content_len` |
-
-Required size: `SkillContent::required_size(content_len)` = `72 + content_len`
-
-### `SkillDescription` — PDA
-seeds: `[b"desc", skill_record.key().as_ref()]`
-
-Short one-sentence description. Always allocated at max size (525 bytes) so updates never need realloc.
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `bump` | `u8` | PDA bump |
-| `description` | `String` | Max 512 bytes |
-
-### `SkillBuffer` — client-created keypair (zero-copy)
-Fixed header (80 bytes) + raw data bytes. Uses `#[account(zero_copy)]` for efficient field access.
-
-| Offset | Field | Size |
-|--------|-------|------|
-| 0 | discriminator | 8 |
-| 8 | `authority` | 32 |
-| 40 | `skill` (SkillRecord pubkey) | 32 |
-| 72 | `total_len` | 4 |
-| 76 | `write_offset` | 4 |
-| 80 | raw data bytes | `total_len` |
-
-Required size: `SkillBuffer::required_size(total_len)` = `80 + total_len`
+- **Admin-controlled fees** — registration requires a NARA fee set by the admin; fee = 0 means free.
 
 ---
 
@@ -72,24 +20,35 @@ Required size: `SkillBuffer::required_size(total_len)` = `80 + total_len`
 
 | # | Instruction | Description |
 |---|-------------|-------------|
-| 1 | `register_skill(name)` | Creates a `SkillRecord` PDA; name must be ≤ 32 bytes |
-| 2 | `set_description(name, description)` | Creates or updates the `SkillDescription` PDA; description must be ≤ 512 bytes |
-| 3 | `transfer_authority(name, new_authority)` | Transfers ownership; no pending buffer allowed |
-| 4 | `init_buffer(name, total_len)` | Initializes a client-preallocated buffer account; writes header via `load_init()` |
-| 5 | `write_to_buffer(name, offset, data)` | Writes a chunk at `offset`; offset must equal `write_offset` (strict sequential) |
-| 6 | `finalize_skill_new(name)` | Copies buffer → `new_content`; skill must have no existing content |
-| 7 | `finalize_skill_update(name)` | Copies buffer → `new_content`, closes `old_content`; skill must have existing content |
-| 8 | `close_buffer(name)` | Discards the buffer without finalizing; clears `pending_buffer` |
+| 1 | `init_config()` | One-time program initialization; caller becomes admin, default fee = 1 NARA |
+| 2 | `update_admin(new_admin)` | Admin: transfer admin authority |
+| 3 | `update_fee_recipient(new_recipient)` | Admin: change the fee collection account |
+| 4 | `update_register_fee(new_fee)` | Admin: change the registration fee (lamports; 0 = free) |
+| 5 | `register_skill(name)` | Creates a `SkillRecord` PDA; name must be ≥ 5 bytes; collects registration fee |
+| 6 | `set_description(name, description)` | Creates or updates the `SkillDescription` PDA; description must be ≤ 512 bytes |
+| 7 | `transfer_authority(name, new_authority)` | Transfers ownership; no pending buffer allowed |
+| 8 | `init_buffer(name, total_len)` | Initializes a client-preallocated buffer account |
+| 9 | `write_to_buffer(name, offset, data)` | Writes a chunk at `offset`; offset must equal `write_offset` (strict sequential) |
+| 10 | `finalize_skill_new(name)` | Copies buffer → `new_content`; skill must have no existing content |
+| 11 | `finalize_skill_update(name)` | Copies buffer → `new_content`, closes `old_content`; skill must have existing content |
+| 12 | `close_buffer(name)` | Discards the buffer without finalizing; clears `pending_buffer` |
 
 ---
 
 ## Typical Workflows
 
+### One-time setup (first deploy)
+
+```
+init_config()
+└─ admin = caller, register_fee = 1 NARA, fee_recipient = caller
+```
+
 ### Create a skill with content
 
 ```
 1. register_skill(name)
-   └─ program creates SkillRecord PDA
+   └─ program creates SkillRecord PDA; registration fee sent to fee_recipient
 
 2. [client] createAccount(bufferKeypair, SkillBuffer::required_size(N), programId)
 
@@ -142,7 +101,7 @@ close_buffer(name)
 
 | Code | Message |
 |------|---------|
-| `NameTooLong` | Name too long: max 32 bytes |
+| `NameTooShort` | Name too short: min 5 bytes |
 | `DescriptionTooLong` | Description too long: max 512 bytes |
 | `Unauthorized` | Unauthorized |
 | `OffsetMismatch` | Buffer write offset mismatch: writes must be sequential |
@@ -158,6 +117,7 @@ close_buffer(name)
 | `ContentAlreadyExists` | Skill already has content; use finalize_skill_update instead |
 | `ContentNotFound` | Skill has no existing content; use finalize_skill_new instead |
 | `HasPendingBuffer` | Cannot perform this operation while a pending buffer exists |
+| `InvalidFeeRecipient` | fee_recipient does not match config.fee_recipient |
 
 ---
 
@@ -172,9 +132,14 @@ programs/nara-skill-hub/src/
 │   ├── skill_record.rs
 │   ├── skill_content.rs
 │   ├── skill_description.rs
-│   └── skill_buffer.rs
+│   ├── skill_buffer.rs
+│   └── program_config.rs
 └── instructions/
     ├── mod.rs
+    ├── init_config.rs
+    ├── update_admin.rs
+    ├── update_fee_recipient.rs
+    ├── update_register_fee.rs
     ├── register_skill.rs
     ├── set_description.rs
     ├── transfer_authority.rs
