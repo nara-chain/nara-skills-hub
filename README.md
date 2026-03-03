@@ -33,6 +33,7 @@ A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skil
 | 11 | `finalize_skill_update(name)` | Copies buffer → `new_content`, closes `old_content`; skill must have existing content |
 | 12 | `close_buffer(name)` | Discards the buffer without finalizing; clears `pending_buffer` |
 | 13 | `update_metadata(name, data)` | Creates or updates the `SkillMetadata` PDA with arbitrary JSON (max 800 bytes) |
+| 14 | `delete_skill(name)` | Closes `SkillRecord`, `SkillDescription`, `SkillMetadata`, and `SkillContent`; returns all rent to authority; name can be re-registered |
 
 ---
 
@@ -96,6 +97,19 @@ close_buffer(name)
 → init_buffer(name, newLen) — start a new upload
 ```
 
+### Delete a skill (and optionally re-register the name)
+
+```
+[optional] close_buffer(name)     ← required first if a pending buffer exists
+
+delete_skill(name)
+└─ closes SkillRecord + SkillDescription + SkillMetadata + SkillContent
+└─ all rent returned to authority
+└─ name is now available again
+
+→ register_skill(name, author)    ← re-register with the same name
+```
+
 ---
 
 ## Error Codes
@@ -152,7 +166,8 @@ programs/nara-skills-hub/src/
     ├── finalize_skill_new.rs
     ├── finalize_skill_update.rs
     ├── close_buffer.rs
-    └── update_metadata.rs
+    ├── update_metadata.rs
+    └── delete_skill.rs
 ```
 
 ---

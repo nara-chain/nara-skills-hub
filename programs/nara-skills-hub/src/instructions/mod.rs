@@ -1,4 +1,5 @@
 pub mod close_buffer;
+pub mod delete_skill;
 pub mod finalize_skill_new;
 pub mod finalize_skill_update;
 pub mod init_buffer;
@@ -16,6 +17,7 @@ pub mod write_to_buffer;
 // lib.rs can use `use instructions::*;` and `Context<RegisterSkill>` etc.
 // Function names are unique per module so there are no glob collisions.
 pub use close_buffer::*;
+pub use delete_skill::*;
 pub use finalize_skill_new::*;
 pub use finalize_skill_update::*;
 pub use init_buffer::*;

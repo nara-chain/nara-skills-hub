@@ -1061,4 +1061,154 @@ describe("nara-skills-hub", () => {
         .rpc();
     });
   });
+
+  // ── delete_skill ─────────────────────────────────────────────────────────
+  describe("delete_skill", () => {
+    const NAME = "delete-skill-01";
+    let contentKp: Keypair;
+
+    before(async () => {
+      contentKp = Keypair.generate();
+      const bufKp = Keypair.generate();
+      const CONTENT = Buffer.from("skill content to be deleted");
+
+      await doRegisterSkill(NAME, authority.publicKey, "To Be Deleted");
+
+      // Set description and metadata.
+      await program.methods
+        .setDescription(NAME, "A skill that will be deleted.")
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME),
+          descriptionAccount: descPDA(skillPDA(NAME)),
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      await program.methods
+        .updateMetadata(NAME, JSON.stringify({ tag: "temp" }))
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME),
+          metadata: metaPDA(skillPDA(NAME)),
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      // Upload content.
+      await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + CONTENT.length);
+      await program.methods
+        .initBuffer(NAME, CONTENT.length)
+        .accounts({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
+        .rpc();
+      await program.methods
+        .writeToBuffer(NAME, 0, CONTENT)
+        .accounts({ authority: authority.publicKey, skill: skillPDA(NAME), buffer: bufKp.publicKey })
+        .rpc();
+      await createProgramAccount(contentKp, SKILL_CONTENT_HEADER + CONTENT.length);
+      await program.methods
+        .finalizeSkillNew(NAME)
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME),
+          buffer: bufKp.publicKey,
+          newContent: contentKp.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    });
+
+    it("closes skill record, description, metadata, and content; returns rent", async () => {
+      const skillKey = skillPDA(NAME);
+
+      await program.methods
+        .deleteSkill(NAME)
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillKey,
+          description: descPDA(skillKey),
+          metadata: metaPDA(skillKey),
+          contentAccount: contentKp.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      expect(await provider.connection.getAccountInfo(skillKey)).to.be.null;
+      expect(await provider.connection.getAccountInfo(descPDA(skillKey))).to.be.null;
+      expect(await provider.connection.getAccountInfo(metaPDA(skillKey))).to.be.null;
+      expect(await provider.connection.getAccountInfo(contentKp.publicKey)).to.be.null;
+    });
+
+    it("allows re-registration with the same name after deletion", async () => {
+      const skillKey = skillPDA(NAME);
+      await doRegisterSkill(NAME, authority.publicKey, "Reborn");
+
+      const skill = await program.account.skillRecord.fetch(skillKey);
+      expect(skill.author).to.eq("Reborn");
+      expect(skill.version).to.eq(0);
+    });
+
+    it("rejects non-authority (Unauthorized)", async () => {
+      const other = Keypair.generate();
+      const skillKey = skillPDA(NAME);
+      try {
+        await program.methods
+          .deleteSkill(NAME)
+          .accounts({
+            authority: other.publicKey,
+            skill: skillKey,
+            description: descPDA(skillKey),
+            metadata: metaPDA(skillKey),
+            contentAccount: authority.publicKey, // no content, dummy
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([other])
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
+      }
+    });
+
+    it("rejects deletion while a pending buffer exists (HasPendingBuffer)", async () => {
+      const NAME3 = "del-buf-guard";
+      const bufKp = Keypair.generate();
+      const skillKey = skillPDA(NAME3);
+
+      await doRegisterSkill(NAME3);
+      await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + 10);
+      await program.methods
+        .initBuffer(NAME3, 10)
+        .accounts({ authority: authority.publicKey, skill: skillKey, buffer: bufKp.publicKey })
+        .rpc();
+
+      try {
+        await program.methods
+          .deleteSkill(NAME3)
+          .accounts({
+            authority: authority.publicKey,
+            skill: skillKey,
+            description: descPDA(skillKey),
+            metadata: metaPDA(skillKey),
+            contentAccount: authority.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("HasPendingBuffer");
+      }
+
+      // Cleanup
+      await program.methods
+        .closeBuffer(NAME3)
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillKey,
+          buffer: bufKp.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    });
+  });
 });

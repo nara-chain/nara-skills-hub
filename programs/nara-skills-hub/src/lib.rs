@@ -80,4 +80,8 @@ pub mod nara_skills_hub {
     pub fn update_metadata(ctx: Context<UpdateMetadata>, name: String, data: String) -> Result<()> {
         instructions::update_metadata::update_metadata(ctx, name, data)
     }
+
+    pub fn delete_skill(ctx: Context<DeleteSkill>, name: String) -> Result<()> {
+        instructions::delete_skill::delete_skill(ctx, name)
+    }
 }
