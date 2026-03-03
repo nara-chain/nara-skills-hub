@@ -1,159 +1,197 @@
 # Nara Skill Hub
 
-A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skills** — prompt texts that teach AI agents how to perform tasks. Skill names are globally unique. The program supports descriptions, authority transfers, configurable registration fees, and resumable chunked uploads for large content.
+> **Prompt Infrastructure for Autonomous Agents**  
+> Upgrading AI skills from repo-bound strings into verifiable on-chain assets.
 
-**Program ID:** `54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU`
+`Nara Skill Hub` is an on-chain registry built with Solana + Anchor 0.32.1 for registering, versioning, updating, discovering, and governing AI agent skills.
 
----
-
-## Design Principles
-
-- **Client-allocated large accounts** — `SkillContent` and `SkillBuffer` are created by the client via `system_program::create_account`, avoiding the 10 KB CPI realloc limit.
-- **Fixed-header structs, raw trailing bytes** — no `Vec<u8>` fields; content bytes are written directly after the header at a known offset.
-- **Resumable uploads** — `write_to_buffer` enforces a strict sequential offset, enabling the client to resume from the last acknowledged `write_offset` after a failed transaction.
-- **One active buffer per skill** — a new buffer cannot be initialized until the existing one is closed or finalized.
-- **Admin-controlled fees** — registration requires a NARA fee set by the admin; fee = 0 means free.
+- **Program ID**: `54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU`
+- **Positioning Keywords**: Skill Assetization / Prompt Liquidity / On-chain Capability Layer / Verifiable Agent Infrastructure
 
 ---
 
-## Instructions
+## 1. Narrative: Why This Exists
 
-| # | Instruction | Description |
-|---|-------------|-------------|
-| 1 | `init_config()` | One-time program initialization; caller becomes admin, default fee = 1 NARA |
-| 2 | `update_admin(new_admin)` | Admin: transfer admin authority |
-| 3 | `update_fee_recipient(new_recipient)` | Admin: change the fee collection account |
-| 4 | `update_register_fee(new_fee)` | Admin: change the registration fee (lamports; 0 = free) |
-| 5 | `register_skill(name, author)` | Creates a `SkillRecord` PDA; name must be ≥ 5 bytes; author is a display name (max 64 bytes); collects registration fee |
-| 6 | `set_description(name, description)` | Creates or updates the `SkillDescription` PDA; description must be ≤ 512 bytes |
-| 7 | `transfer_authority(name, new_authority)` | Transfers ownership; no pending buffer allowed |
-| 8 | `init_buffer(name, total_len)` | Initializes a client-preallocated buffer account |
-| 9 | `write_to_buffer(name, offset, data)` | Writes a chunk at `offset`; offset must equal `write_offset` (strict sequential) |
-| 10 | `finalize_skill_new(name)` | Copies buffer → `new_content`; skill must have no existing content |
-| 11 | `finalize_skill_update(name)` | Copies buffer → `new_content`, closes `old_content`; skill must have existing content |
-| 12 | `close_buffer(name)` | Discards the buffer without finalizing; clears `pending_buffer` |
-| 13 | `update_metadata(name, data)` | Creates or updates the `SkillMetadata` PDA with arbitrary JSON (max 800 bytes) |
-| 14 | `delete_skill(name)` | Closes `SkillRecord`, `SkillDescription`, `SkillMetadata`, and `SkillContent`; returns all rent to authority; name can be re-registered |
+In most agent stacks, skills are still treated as opaque config blobs:
+
+- Scattered across private repos and not discoverable
+- Updated without auditable anchors and hard to verify
+- Lacking a shared namespace and hard to compose
+- Missing durable incentive rails for quality contributors
+
+`Nara Skill Hub` addresses this with four protocol-level ideas:
+
+1. **Skill Assetization**
+   Skills become on-chain state objects with name, author, description, content, and version.
+2. **Prompt Liquidity**
+   Skills gain global addresses and a unified read/write flow that any runtime can integrate.
+3. **Capability Consensus Layer**
+   Anyone can verify ownership and current version, creating a shared capability truth surface.
+4. **Economic Flywheel**
+   Registration fee mechanics (NARA/lamports) establish incentive alignment for quality supply.
 
 ---
 
-## Typical Workflows
+## 2. Protocol Primitives
 
-### One-time setup (first deploy)
+### 2.1 Global Namespace
 
-```
+- Skill PDA derived from `name` (`["skill", name]`)
+- Globally unique names prevent semantic collisions
+- Names can be re-registered after deletion, enabling namespace recirculation
+
+### 2.2 Immutable Version Surface
+
+- First publish sets `version = 1`
+- Each content update increments `version`
+- Creates an auditable and deterministic upgrade trail
+
+### 2.3 Chunked Upload Rail
+
+- Large payloads flow through `SkillBuffer`
+- `write_to_buffer` enforces `offset == write_offset`
+- Uploads can resume from failure without rewriting previous chunks
+
+### 2.4 Two-Phase Commit for Content
+
+- Phase A: `init_buffer` + `write_to_buffer*`
+- Phase B: `finalize_skill_new` / `finalize_skill_update`
+- Decouples ingest from activation and reduces state corruption risk
+
+### 2.5 Metadata Composability
+
+- `SkillMetadata` stores JSON payloads (max 800 bytes)
+- Supports discovery, tagging, and ecosystem tooling integration
+
+---
+
+## 3. Core Accounts
+
+- `ProgramConfig`: admin, registration fee, fee recipient
+- `SkillRecord`: canonical skill state (authority / name / author / version / content / pending_buffer)
+- `SkillDescription`: human-readable description (max 512 bytes)
+- `SkillMetadata`: extensible JSON metadata (max 800 bytes)
+- `SkillBuffer`: chunked upload buffer with resumable semantics
+- `SkillContent`: finalized active content account
+
+---
+
+## 4. Instruction Matrix
+
+| # | Instruction | Capability |
+|---|-------------|------------|
+| 1 | `init_config()` | Initializes config; caller becomes admin; default fee = `1_000_000_000` lamports |
+| 2 | `update_admin(new_admin)` | Transfers admin authority |
+| 3 | `update_fee_recipient(new_recipient)` | Updates registration fee recipient |
+| 4 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
+| 5 | `register_skill(name, author)` | Registers a skill (name min 5 bytes, author max 64 bytes) |
+| 6 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
+| 7 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
+| 8 | `init_buffer(name, total_len)` | Initializes upload buffer |
+| 9 | `write_to_buffer(name, offset, data)` | Sequential chunk writes with strict offset checks |
+|10 | `finalize_skill_new(name)` | Finalizes first publish and sets `version = 1` |
+|11 | `finalize_skill_update(name)` | Finalizes update, closes old content, increments version |
+|12 | `close_buffer(name)` | Aborts upload and closes pending buffer |
+|13 | `update_metadata(name, data)` | Creates or updates metadata JSON (max 800 bytes) |
+|14 | `delete_skill(name)` | Closes related accounts and reclaims rent |
+
+---
+
+## 5. Lifecycle Playbooks
+
+### 5.1 Bootstrap
+
+```text
 init_config()
-└─ admin = caller, register_fee = 1 NARA, fee_recipient = caller
+└─ admin = caller
+└─ register_fee = 1_000_000_000 lamports
+└─ fee_recipient = caller
 ```
 
-### Create a skill with content
+### 5.2 Mint a Skill Identity (Register + Publish)
 
-```
-1. register_skill(name)
-   └─ program creates SkillRecord PDA; registration fee sent to fee_recipient
-
-2. [client] createAccount(bufferKeypair, SkillBuffer::required_size(N), programId)
-
-3. init_buffer(name, N)
-
-4. write_to_buffer(name, 0,    chunk0)
-   write_to_buffer(name, len0, chunk1)
-   ...
-
-5. [client] createAccount(contentKeypair, SkillContent::required_size(N), programId)
-
-6. finalize_skill_new(name)
-   └─ buffer closed, skill.content = contentKeypair
+```text
+1) register_skill(name, author)
+2) [client] createAccount(buffer, SkillBuffer::required_size(N), program_id)
+3) init_buffer(name, N)
+4) write_to_buffer(name, offset_i, chunk_i) ...
+5) [client] createAccount(content, SkillContent::required_size(N), program_id)
+6) finalize_skill_new(name)
 ```
 
-### Update existing content
+### 5.3 Rolling Upgrade
 
-```
-1. [client] createAccount(bufferKeypair2, SkillBuffer::required_size(M), programId)
-
-2. init_buffer(name, M)
-
-3. write_to_buffer × K
-
-4. [client] createAccount(newContentKeypair, SkillContent::required_size(M), programId)
-
-5. finalize_skill_update(name)
-   └─ old content closed (rent returned), skill.content = newContentKeypair
+```text
+1) init_buffer(name, M)
+2) write_to_buffer * K
+3) finalize_skill_update(name)
+└─ old content closed, rent returned, version++
 ```
 
-### Resumable upload (after a failed transaction)
+### 5.4 Resume After Failure
 
-```
-1. Fetch the buffer account → read write_offset field
-2. Resume from write_offset — skip already-written chunks
-```
-
-### Discard a buffer and start fresh
-
-```
-close_buffer(name)
-└─ pending_buffer cleared, buffer rent returned
-
-→ init_buffer(name, newLen) — start a new upload
+```text
+1) fetch SkillBuffer.write_offset
+2) continue writes from write_offset
 ```
 
-### Delete a skill (and optionally re-register the name)
+### 5.5 Skill Sunset (Delete + Reclaim Namespace)
 
-```
-[optional] close_buffer(name)     ← required first if a pending buffer exists
-
-delete_skill(name)
-└─ closes SkillRecord + SkillDescription + SkillMetadata + SkillContent
-└─ all rent returned to authority
-└─ name is now available again
-
-→ register_skill(name, author)    ← re-register with the same name
+```text
+1) [optional] close_buffer(name)  // required if pending buffer exists
+2) delete_skill(name)
+3) [optional] register_skill(name, author)  // reclaim same name
 ```
 
 ---
 
-## Error Codes
+## 6. Reliability and Invariants
 
-| Code | Message |
-|------|---------|
-| `NameTooShort` | Name too short: min 5 bytes |
-| `DescriptionTooLong` | Description too long: max 512 bytes |
-| `Unauthorized` | Unauthorized |
-| `OffsetMismatch` | Buffer write offset mismatch: writes must be sequential |
-| `WriteOutOfBounds` | Write out of bounds |
-| `BufferIncomplete` | Buffer not fully written |
-| `PendingBufferExists` | A pending buffer already exists; call close_buffer first |
-| `InvalidBufferSize` | Buffer account size does not match total_len |
-| `InvalidBufferOwner` | Buffer account must be owned by this program |
-| `BufferMismatch` | Buffer account does not match skill.pending_buffer |
-| `InvalidContentOwner` | Content account must be owned by this program |
-| `InvalidContentSize` | Content account size does not match buffer total_len |
-| `ContentMismatch` | old_content account does not match skill.content |
-| `ContentAlreadyExists` | Skill already has content; use finalize_skill_update instead |
-| `ContentNotFound` | Skill has no existing content; use finalize_skill_new instead |
-| `HasPendingBuffer` | Cannot perform this operation while a pending buffer exists |
-| `InvalidFeeRecipient` | fee_recipient does not match config.fee_recipient |
-| `AuthorTooLong` | Author name too long: max 64 bytes |
-| `MetadataTooLong` | Metadata too long: max 800 bytes |
+- **Single Pending Buffer Invariant**: each skill can have at most one active pending buffer
+- **Sequential Write Invariant**: writes must be strictly contiguous
+- **Authority Gate**: sensitive operations require authority/admin privileges
+- **Content Ownership Check**: buffer/content accounts must be owned by this program
+- **Bounded Strings**: strict limits on name/author/description/metadata fields
+
+Together these invariants define a recoverable, upgradeable, and governable skill state machine.
 
 ---
 
-## Source Layout
+## 7. Error Surface (Selected)
 
-```
+- `NameTooShort`
+- `AuthorTooLong`
+- `DescriptionTooLong`
+- `MetadataTooLong`
+- `Unauthorized`
+- `OffsetMismatch`
+- `WriteOutOfBounds`
+- `BufferIncomplete`
+- `PendingBufferExists`
+- `HasPendingBuffer`
+- `InvalidBufferOwner` / `InvalidBufferSize` / `BufferMismatch`
+- `InvalidContentOwner` / `InvalidContentSize` / `ContentMismatch`
+- `ContentAlreadyExists` / `ContentNotFound`
+- `InvalidFeeRecipient`
+
+Full definitions: `programs/nara-skills-hub/src/error.rs`.
+
+---
+
+## 8. Repository Layout
+
+```text
 programs/nara-skills-hub/src/
-├── lib.rs                          — program entry, instruction dispatch
-├── error.rs                        — SkillHubError
+├── lib.rs
+├── error.rs
 ├── state/
-│   ├── mod.rs
+│   ├── program_config.rs
 │   ├── skill_record.rs
-│   ├── skill_content.rs
 │   ├── skill_description.rs
 │   ├── skill_metadata.rs
 │   ├── skill_buffer.rs
-│   └── program_config.rs
+│   └── skill_content.rs
 └── instructions/
-    ├── mod.rs
     ├── init_config.rs
     ├── update_admin.rs
     ├── update_fee_recipient.rs
@@ -172,11 +210,20 @@ programs/nara-skills-hub/src/
 
 ---
 
-## Build & Test
+## 9. Build and Test
 
 ```bash
 anchor build
 anchor test
 ```
 
-Requires Rust toolchain `1.89.0` (see `rust-toolchain.toml`) and Anchor CLI 0.32.x.
+Requirements:
+
+- Rust `1.89.0` (see `rust-toolchain.toml`)
+- Anchor CLI `0.32.x`
+
+---
+
+## 10. One-Liner
+
+**Nara Skill Hub transforms agent skills from app-layer config into verifiable on-chain capability assets, powering the liquidity layer for next-generation autonomous agents.**
