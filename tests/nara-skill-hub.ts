@@ -11,7 +11,7 @@ import { expect } from "chai";
 
 // ── Constants matching Rust ───────────────────────────────────────────────────
 const SKILL_BUFFER_HEADER = 80; // 8 disc + 32 authority + 32 skill + 4 total_len + 4 write_offset
-const SKILL_CONTENT_HEADER = 72; // 8 disc + 32 authority + 32 skill
+const SKILL_CONTENT_HEADER = 40; // 8 disc + 32 skill
 const ONE_SOL = new anchor.BN(1_000_000_000);
 
 describe("nara-skill-hub", () => {

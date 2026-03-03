@@ -18,7 +18,7 @@ pub struct RegisterSkill<'info> {
     pub skill: Account<'info, SkillRecord>,
     #[account(
         seeds = [b"config"],
-        bump = config.bump,
+        bump,
     )]
     pub config: Account<'info, ProgramConfig>,
     /// CHECK: must equal config.fee_recipient; validated by constraint below.
@@ -50,7 +50,6 @@ pub fn register_skill(ctx: Context<RegisterSkill>, name: String) -> Result<()> {
 
     let skill = &mut ctx.accounts.skill;
     skill.authority = ctx.accounts.authority.key();
-    skill.bump = ctx.bumps.skill;
     skill.name = name;
     skill.pending_buffer = None;
     skill.content = Pubkey::default();

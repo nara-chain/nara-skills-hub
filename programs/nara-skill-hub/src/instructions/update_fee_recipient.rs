@@ -8,7 +8,7 @@ pub struct UpdateFeeRecipient<'info> {
     #[account(
         mut,
         seeds = [b"config"],
-        bump = config.bump,
+        bump,
         has_one = admin @ SkillHubError::Unauthorized,
     )]
     pub config: Account<'info, ProgramConfig>,

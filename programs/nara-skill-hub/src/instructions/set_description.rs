@@ -9,7 +9,7 @@ pub struct SetDescription<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [b"skill", name.as_bytes()],
-        bump = skill.bump,
+        bump,
         has_one = authority @ SkillHubError::Unauthorized,
     )]
     pub skill: Account<'info, SkillRecord>,
@@ -34,7 +34,6 @@ pub fn set_description(
         SkillHubError::DescriptionTooLong
     );
     let desc = &mut ctx.accounts.description_account;
-    desc.bump = ctx.bumps.description_account;
     desc.description = description;
     Ok(())
 }

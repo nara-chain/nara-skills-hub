@@ -22,7 +22,6 @@ pub struct InitConfig<'info> {
 pub fn init_config(ctx: Context<InitConfig>) -> Result<()> {
     let config = &mut ctx.accounts.config;
     config.admin = ctx.accounts.admin.key();
-    config.bump = ctx.bumps.config;
     config.register_fee = DEFAULT_REGISTER_FEE;
     config.fee_recipient = ctx.accounts.admin.key();
     Ok(())

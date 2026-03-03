@@ -11,7 +11,7 @@ pub struct FinalizeSkillUpdate<'info> {
     #[account(
         mut,
         seeds = [b"skill", name.as_bytes()],
-        bump = skill.bump,
+        bump,
         has_one = authority @ SkillHubError::Unauthorized,
         constraint = skill.content != Pubkey::default() @ SkillHubError::ContentNotFound,
     )]
@@ -59,7 +59,6 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
     );
 
     let skill_key = ctx.accounts.skill.key();
-    let authority_key = *ctx.accounts.authority.key;
 
     // Close old_content — mirrors Anchor's `close = authority` constraint.
     {
@@ -78,9 +77,8 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
 
         let mut nc = ctx.accounts.new_content.try_borrow_mut_data()?;
         nc[..8].copy_from_slice(&SkillContent::DISCRIMINATOR);
-        nc[8..40].copy_from_slice(authority_key.as_ref());
-        nc[40..72].copy_from_slice(skill_key.as_ref());
-        nc[72..72 + total_len].copy_from_slice(slice);
+        nc[8..40].copy_from_slice(skill_key.as_ref());
+        nc[40..40 + total_len].copy_from_slice(slice);
     }
 
     let skill = &mut ctx.accounts.skill;

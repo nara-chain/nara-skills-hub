@@ -9,7 +9,7 @@ pub struct TransferAuthority<'info> {
     #[account(
         mut,
         seeds = [b"skill", name.as_bytes()],
-        bump = skill.bump,
+        bump,
         has_one = authority @ SkillHubError::Unauthorized,
     )]
     pub skill: Account<'info, SkillRecord>,

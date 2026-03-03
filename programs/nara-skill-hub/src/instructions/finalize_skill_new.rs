@@ -10,7 +10,7 @@ pub struct FinalizeSkillNew<'info> {
     #[account(
         mut,
         seeds = [b"skill", name.as_bytes()],
-        bump = skill.bump,
+        bump,
         has_one = authority @ SkillHubError::Unauthorized,
     )]
     pub skill: Account<'info, SkillRecord>,
@@ -55,10 +55,7 @@ pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Resu
     );
 
     let skill_key = ctx.accounts.skill.key();
-    let authority_key = *ctx.accounts.authority.key;
 
-    // Copy buffer raw data → new_content (buffer is still intact; close = authority
-    // runs in Anchor's exit handler after this function returns).
     {
         let buf_info = ctx.accounts.buffer.to_account_info();
         let buf_data = buf_info.try_borrow_data()?;
@@ -66,9 +63,8 @@ pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Resu
 
         let mut nc = ctx.accounts.new_content.try_borrow_mut_data()?;
         nc[..8].copy_from_slice(&SkillContent::DISCRIMINATOR);
-        nc[8..40].copy_from_slice(authority_key.as_ref());
-        nc[40..72].copy_from_slice(skill_key.as_ref());
-        nc[72..72 + total_len].copy_from_slice(slice);
+        nc[8..40].copy_from_slice(skill_key.as_ref());
+        nc[40..40 + total_len].copy_from_slice(slice);
     }
 
     let skill = &mut ctx.accounts.skill;

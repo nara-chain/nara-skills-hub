@@ -7,9 +7,7 @@ use anchor_lang::prelude::*;
 pub struct SkillRecord {
     /// Who may update this skill.
     pub authority: Pubkey,
-    /// PDA bump stored for efficient re-validation.
-    pub bump: u8,
-    /// Globally unique name (min 4 bytes, max 32 bytes enforced by Solana PDA seed limit).
+    /// Globally unique name (min 5 bytes, max 32 bytes enforced by Solana PDA seed limit).
     pub name: String,
     /// Active upload buffer, if any. Must be closed before starting a new one.
     pub pending_buffer: Option<Pubkey>,
@@ -22,7 +20,6 @@ impl SkillRecord {
     pub fn space(name_len: usize) -> usize {
         8           // discriminator
         + 32        // authority
-        + 1         // bump
         + 4 + name_len  // name (String: u32 prefix + bytes)
         + 1 + 32    // Option<Pubkey>
         + 32        // content

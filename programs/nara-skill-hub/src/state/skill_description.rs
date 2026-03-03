@@ -5,8 +5,6 @@ use anchor_lang::prelude::*;
 /// avoid realloc on subsequent updates.
 #[account]
 pub struct SkillDescription {
-    /// PDA bump.
-    pub bump: u8,
     /// One-sentence description (max 512 bytes).
     pub description: String,
 }
@@ -14,5 +12,5 @@ pub struct SkillDescription {
 impl SkillDescription {
     pub const MAX_DESC_LEN: usize = 512;
     /// Fixed allocation: always use max space so updates never need realloc.
-    pub const SPACE: usize = 8 + 1 + 4 + Self::MAX_DESC_LEN;
+    pub const SPACE: usize = 8 + 4 + Self::MAX_DESC_LEN;
 }

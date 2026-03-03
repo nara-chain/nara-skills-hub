@@ -8,7 +8,7 @@ pub struct WriteToBuffer<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [b"skill", name.as_bytes()],
-        bump = skill.bump,
+        bump,
         has_one = authority @ SkillHubError::Unauthorized,
     )]
     pub skill: Account<'info, SkillRecord>,
