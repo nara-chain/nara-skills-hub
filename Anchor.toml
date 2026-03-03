@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-nara_skill_hub = "54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU"
+nara_skills_hub = "54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU"
 
 [registry]
 url = "https://api.apr.dev"

@@ -24,7 +24,7 @@ A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skil
 | 2 | `update_admin(new_admin)` | Admin: transfer admin authority |
 | 3 | `update_fee_recipient(new_recipient)` | Admin: change the fee collection account |
 | 4 | `update_register_fee(new_fee)` | Admin: change the registration fee (lamports; 0 = free) |
-| 5 | `register_skill(name)` | Creates a `SkillRecord` PDA; name must be ≥ 5 bytes; collects registration fee |
+| 5 | `register_skill(name, author)` | Creates a `SkillRecord` PDA; name must be ≥ 5 bytes; author is a display name (max 64 bytes); collects registration fee |
 | 6 | `set_description(name, description)` | Creates or updates the `SkillDescription` PDA; description must be ≤ 512 bytes |
 | 7 | `transfer_authority(name, new_authority)` | Transfers ownership; no pending buffer allowed |
 | 8 | `init_buffer(name, total_len)` | Initializes a client-preallocated buffer account |
@@ -32,6 +32,7 @@ A Solana program (Anchor 0.32.1) that acts as a global registry for **agent skil
 | 10 | `finalize_skill_new(name)` | Copies buffer → `new_content`; skill must have no existing content |
 | 11 | `finalize_skill_update(name)` | Copies buffer → `new_content`, closes `old_content`; skill must have existing content |
 | 12 | `close_buffer(name)` | Discards the buffer without finalizing; clears `pending_buffer` |
+| 13 | `update_metadata(name, data)` | Creates or updates the `SkillMetadata` PDA with arbitrary JSON (max 800 bytes) |
 
 ---
 
@@ -118,13 +119,15 @@ close_buffer(name)
 | `ContentNotFound` | Skill has no existing content; use finalize_skill_new instead |
 | `HasPendingBuffer` | Cannot perform this operation while a pending buffer exists |
 | `InvalidFeeRecipient` | fee_recipient does not match config.fee_recipient |
+| `AuthorTooLong` | Author name too long: max 64 bytes |
+| `MetadataTooLong` | Metadata too long: max 800 bytes |
 
 ---
 
 ## Source Layout
 
 ```
-programs/nara-skill-hub/src/
+programs/nara-skills-hub/src/
 ├── lib.rs                          — program entry, instruction dispatch
 ├── error.rs                        — SkillHubError
 ├── state/
@@ -132,6 +135,7 @@ programs/nara-skill-hub/src/
 │   ├── skill_record.rs
 │   ├── skill_content.rs
 │   ├── skill_description.rs
+│   ├── skill_metadata.rs
 │   ├── skill_buffer.rs
 │   └── program_config.rs
 └── instructions/
@@ -147,7 +151,8 @@ programs/nara-skill-hub/src/
     ├── write_to_buffer.rs
     ├── finalize_skill_new.rs
     ├── finalize_skill_update.rs
-    └── close_buffer.rs
+    ├── close_buffer.rs
+    └── update_metadata.rs
 ```
 
 ---

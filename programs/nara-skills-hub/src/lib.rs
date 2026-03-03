@@ -9,10 +9,11 @@ pub mod state;
 use instructions::*;
 
 pub const MIN_NAME_LEN: usize = 5;
-pub const DEFAULT_REGISTER_FEE: u64 = 1_000_000_000; // 1 SOL in lamports
+pub const MAX_AUTHOR_LEN: usize = 64;
+pub const DEFAULT_REGISTER_FEE: u64 = 1_000_000_000; // 1 NARA in lamports
 
 #[program]
-pub mod nara_skill_hub {
+pub mod nara_skills_hub {
     use super::*;
 
     pub fn init_config(ctx: Context<InitConfig>) -> Result<()> {
@@ -31,8 +32,8 @@ pub mod nara_skill_hub {
         instructions::update_register_fee::update_register_fee(ctx, new_fee)
     }
 
-    pub fn register_skill(ctx: Context<RegisterSkill>, name: String) -> Result<()> {
-        instructions::register_skill::register_skill(ctx, name)
+    pub fn register_skill(ctx: Context<RegisterSkill>, name: String, author: String) -> Result<()> {
+        instructions::register_skill::register_skill(ctx, name, author)
     }
 
     pub fn transfer_authority(
@@ -74,5 +75,9 @@ pub mod nara_skill_hub {
 
     pub fn close_buffer(ctx: Context<CloseBuffer>, name: String) -> Result<()> {
         instructions::close_buffer::close_buffer(ctx, name)
+    }
+
+    pub fn update_metadata(ctx: Context<UpdateMetadata>, name: String, data: String) -> Result<()> {
+        instructions::update_metadata::update_metadata(ctx, name, data)
     }
 }

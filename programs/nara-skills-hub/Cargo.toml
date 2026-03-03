@@ -1,12 +1,12 @@
 [package]
-name = "nara-skill-hub"
+name = "nara-skills-hub"
 version = "0.1.0"
 description = "Created with Anchor"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "nara_skill_hub"
+name = "nara_skills_hub"
 
 [features]
 default = []

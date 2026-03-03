@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program, web3 } from "@coral-xyz/anchor";
-import { NaraSkillHub } from "../target/types/nara_skill_hub";
+import { NaraSkillsHub } from "../target/types/nara_skills_hub";
 import {
   Keypair,
   PublicKey,
@@ -14,10 +14,10 @@ const SKILL_BUFFER_HEADER = 80; // 8 disc + 32 authority + 32 skill + 4 total_le
 const SKILL_CONTENT_HEADER = 40; // 8 disc + 32 skill
 const ONE_SOL = new anchor.BN(1_000_000_000);
 
-describe("nara-skill-hub", () => {
+describe("nara-skills-hub", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.NaraSkillHub as Program<NaraSkillHub>;
+  const program = anchor.workspace.NaraSkillsHub as Program<NaraSkillsHub>;
   const authority = provider.wallet as anchor.Wallet;
 
   // ── PDA helpers ─────────────────────────────────────────────────────────
@@ -36,6 +36,12 @@ describe("nara-skill-hub", () => {
   const configPDA = (): PublicKey =>
     PublicKey.findProgramAddressSync(
       [Buffer.from("config")],
+      program.programId
+    )[0];
+
+  const metaPDA = (skillKey: PublicKey): PublicKey =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("meta"), skillKey.toBuffer()],
       program.programId
     )[0];
 
@@ -58,10 +64,11 @@ describe("nara-skill-hub", () => {
   // ── Helper: register a skill with config + feeRecipient ─────────────────
   async function doRegisterSkill(
     name: string,
-    feeRecipient: PublicKey = authority.publicKey
+    feeRecipient: PublicKey = authority.publicKey,
+    author: string = "anonymous"
   ) {
     await program.methods
-      .registerSkill(name)
+      .registerSkill(name, author)
       .accounts({
         authority: authority.publicKey,
         skill: skillPDA(name),
@@ -200,13 +207,17 @@ describe("nara-skill-hub", () => {
     const NAME = "test-skill-01";
 
     it("creates a new SkillRecord PDA", async () => {
-      await doRegisterSkill(NAME);
+      await doRegisterSkill(NAME, authority.publicKey, "Test Author");
 
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.authority.toBase58()).to.eq(authority.publicKey.toBase58());
       expect(skill.name).to.eq(NAME);
+      expect(skill.author).to.eq("Test Author");
       expect(skill.pendingBuffer).to.be.null;
       expect(skill.content.equals(PublicKey.default)).to.be.true;
+      expect(skill.version).to.eq(0);
+      expect(skill.createdAt.toNumber()).to.be.greaterThan(0);
+      expect(skill.updatedAt.toNumber()).to.eq(0);
     });
 
     it("rejects duplicate names", async () => {
@@ -224,6 +235,15 @@ describe("nara-skill-hub", () => {
         expect.fail("expected error");
       } catch (e: any) {
         expect(e.error?.errorCode?.code ?? e.message).to.include("NameTooShort");
+      }
+    });
+
+    it("rejects author names longer than 64 bytes (AuthorTooLong)", async () => {
+      try {
+        await doRegisterSkill("long-auth-01", authority.publicKey, "A".repeat(65));
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("AuthorTooLong");
       }
     });
   });
@@ -307,6 +327,87 @@ describe("nara-skill-hub", () => {
         expect(e.error?.errorCode?.code ?? e.message).to.include(
           "DescriptionTooLong"
         );
+      }
+    });
+  });
+
+  // ── update_metadata ───────────────────────────────────────────────────────
+  describe("update_metadata", () => {
+    const NAME = "meta-skill-01";
+
+    before(async () => {
+      await doRegisterSkill(NAME);
+    });
+
+    it("creates metadata PDA on first call and stores JSON", async () => {
+      const skillKey = skillPDA(NAME);
+      const json = JSON.stringify({ tags: ["ai", "poetry"], lang: "en" });
+      await program.methods
+        .updateMetadata(NAME, json)
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillKey,
+          metadata: metaPDA(skillKey),
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      const meta = await program.account.skillMetadata.fetch(metaPDA(skillKey));
+      expect(meta.data).to.eq(json);
+    });
+
+    it("overwrites metadata on subsequent calls", async () => {
+      const skillKey = skillPDA(NAME);
+      const updated = JSON.stringify({ tags: ["ai"], lang: "zh", version: 2 });
+      await program.methods
+        .updateMetadata(NAME, updated)
+        .accounts({
+          authority: authority.publicKey,
+          skill: skillKey,
+          metadata: metaPDA(skillKey),
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      const meta = await program.account.skillMetadata.fetch(metaPDA(skillKey));
+      expect(meta.data).to.eq(updated);
+    });
+
+    it("rejects non-authority signer", async () => {
+      const skillKey = skillPDA(NAME);
+      const other = Keypair.generate();
+      try {
+        await program.methods
+          .updateMetadata(NAME, "{}")
+          .accounts({
+            authority: other.publicKey,
+            skill: skillKey,
+            metadata: metaPDA(skillKey),
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([other])
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
+      }
+    });
+
+    it("rejects data longer than 4096 bytes (MetadataTooLong)", async () => {
+      const skillKey = skillPDA(NAME);
+      try {
+        await program.methods
+          .updateMetadata(NAME, "x".repeat(801))
+          .accounts({
+            authority: authority.publicKey,
+            skill: skillKey,
+            metadata: metaPDA(skillKey),
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("MetadataTooLong");
       }
     });
   });
@@ -465,6 +566,7 @@ describe("nara-skill-hub", () => {
       skill = await program.account.skillRecord.fetch(skillKey);
       expect(skill.content.toBase58()).to.eq(contentKp.publicKey.toBase58());
       expect(skill.pendingBuffer).to.be.null;
+      expect(skill.version).to.eq(1);
 
       // Content bytes match.
       const info = await provider.connection.getAccountInfo(contentKp.publicKey);
@@ -831,6 +933,7 @@ describe("nara-skill-hub", () => {
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.content.toBase58()).to.eq(contentV2Kp.publicKey.toBase58());
       expect(skill.pendingBuffer).to.be.null;
+      expect(skill.version).to.eq(2);
 
       // v2 content bytes correct.
       const info = await provider.connection.getAccountInfo(contentV2Kp.publicKey);

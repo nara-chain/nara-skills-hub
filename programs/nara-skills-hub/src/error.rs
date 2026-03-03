@@ -36,4 +36,8 @@ pub enum SkillHubError {
     HasPendingBuffer,
     #[msg("Fee recipient does not match config.fee_recipient")]
     InvalidFeeRecipient,
+    #[msg("Author name too long: max 64 bytes")]
+    AuthorTooLong,
+    #[msg("Metadata too long: max 800 bytes")]
+    MetadataTooLong,
 }

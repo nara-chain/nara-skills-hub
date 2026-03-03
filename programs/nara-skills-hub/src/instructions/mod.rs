@@ -8,6 +8,7 @@ pub mod set_description;
 pub mod transfer_authority;
 pub mod update_admin;
 pub mod update_fee_recipient;
+pub mod update_metadata;
 pub mod update_register_fee;
 pub mod write_to_buffer;
 
@@ -24,5 +25,6 @@ pub use set_description::*;
 pub use transfer_authority::*;
 pub use update_admin::*;
 pub use update_fee_recipient::*;
+pub use update_metadata::*;
 pub use update_register_fee::*;
 pub use write_to_buffer::*;

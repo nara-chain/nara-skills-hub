@@ -84,5 +84,7 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
     let skill = &mut ctx.accounts.skill;
     skill.content = ctx.accounts.new_content.key();
     skill.pending_buffer = None;
+    skill.version += 1;
+    skill.updated_at = Clock::get()?.unix_timestamp;
     Ok(())
 }

@@ -9,7 +9,7 @@ pub struct InitConfig<'info> {
     #[account(
         init,
         payer = admin,
-        space = ProgramConfig::SPACE,
+        space = 8 + 32 + 8 + 32, // discriminator + admin + register_fee + fee_recipient
         seeds = [b"config"],
         bump,
     )]

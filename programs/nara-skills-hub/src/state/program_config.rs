@@ -12,7 +12,3 @@ pub struct ProgramConfig {
     pub fee_recipient: Pubkey,
 }
 
-impl ProgramConfig {
-    /// discriminator (8) + admin (32) + register_fee (8) + fee_recipient (32)
-    pub const SPACE: usize = 8 + 32 + 8 + 32;
-}
