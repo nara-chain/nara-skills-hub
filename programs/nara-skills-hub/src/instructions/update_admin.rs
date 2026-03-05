@@ -9,12 +9,13 @@ pub struct UpdateAdmin<'info> {
         mut,
         seeds = [b"config"],
         bump,
-        has_one = admin @ SkillHubError::Unauthorized,
     )]
-    pub config: Account<'info, ProgramConfig>,
+    pub config: AccountLoader<'info, ProgramConfig>,
 }
 
 pub fn update_admin(ctx: Context<UpdateAdmin>, new_admin: Pubkey) -> Result<()> {
-    ctx.accounts.config.admin = new_admin;
+    let mut config = ctx.accounts.config.load_mut()?;
+    require_keys_eq!(config.admin, ctx.accounts.admin.key(), SkillHubError::Unauthorized);
+    config.admin = new_admin;
     Ok(())
 }

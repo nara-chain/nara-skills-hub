@@ -4,6 +4,8 @@ use anchor_lang::prelude::*;
 pub enum SkillHubError {
     #[msg("Name too short: min 5 bytes")]
     NameTooShort,
+    #[msg("Name too long: max 32 bytes")]
+    NameTooLong,
     #[msg("Description too long: max 512 bytes")]
     DescriptionTooLong,
     #[msg("Unauthorized")]

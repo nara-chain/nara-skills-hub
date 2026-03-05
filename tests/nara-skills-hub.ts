@@ -9,10 +9,16 @@ import {
 } from "@solana/web3.js";
 import { expect } from "chai";
 
-// ── Constants matching Rust ───────────────────────────────────────────────────
-const SKILL_BUFFER_HEADER = 80; // 8 disc + 32 authority + 32 skill + 4 total_len + 4 write_offset
-const SKILL_CONTENT_HEADER = 40; // 8 disc + 32 skill
+// ── Constants matching Rust (updated for zero_copy + 64-byte reserved) ───────
+const SKILL_BUFFER_HEADER = 144; // 8 disc + 32 authority + 32 skill + 4 total_len + 4 write_offset + 64 reserved
+const SKILL_CONTENT_HEADER = 104; // 8 disc + 32 skill + 64 reserved
 const ONE_SOL = new anchor.BN(1_000_000_000);
+const NULL_KEY = PublicKey.default;
+
+// ── Zero-copy helper: read a fixed-size byte array as a UTF-8 string ─────────
+function zcString(bytes: number[], len: number): string {
+  return Buffer.from(bytes.slice(0, len)).toString("utf-8");
+}
 
 describe("nara-skills-hub", () => {
   const provider = anchor.AnchorProvider.env();
@@ -165,14 +171,13 @@ describe("nara-skills-hub", () => {
 
     it("collects fee when fee_recipient differs from authority", async () => {
       const recipient = Keypair.generate();
-      // Fund recipient so it can receive lamports
       const sig = await provider.connection.requestAirdrop(
         recipient.publicKey,
         web3.LAMPORTS_PER_SOL
       );
       await provider.connection.confirmTransaction(sig);
 
-      const smallFee = new anchor.BN(10_000_000); // 0.01 SOL
+      const smallFee = new anchor.BN(10_000_000);
       await program.methods
         .updateRegisterFee(smallFee)
         .accountsStrict({ admin: authority.publicKey, config: configPDA() })
@@ -184,12 +189,10 @@ describe("nara-skills-hub", () => {
 
       try {
         const before = await provider.connection.getBalance(recipient.publicKey);
-        // Pass recipient.publicKey so it matches config.fee_recipient
         await doRegisterSkill("fee-test-01", recipient.publicKey);
         const after = await provider.connection.getBalance(recipient.publicKey);
         expect(after - before).to.eq(10_000_000);
       } finally {
-        // Always restore config regardless of test outcome
         await program.methods
           .updateRegisterFee(ONE_SOL)
           .accountsStrict({ admin: authority.publicKey, config: configPDA() })
@@ -211,10 +214,10 @@ describe("nara-skills-hub", () => {
 
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.authority.toBase58()).to.eq(authority.publicKey.toBase58());
-      expect(skill.name).to.eq(NAME);
-      expect(skill.author).to.eq("Test Author");
-      expect(skill.pendingBuffer).to.be.null;
-      expect(skill.content.equals(PublicKey.default)).to.be.true;
+      expect(zcString(skill.name as number[], skill.nameLen)).to.eq(NAME);
+      expect(zcString(skill.author as number[], skill.authorLen)).to.eq("Test Author");
+      expect(skill.pendingBuffer.equals(NULL_KEY)).to.be.true;
+      expect(skill.content.equals(NULL_KEY)).to.be.true;
       expect(skill.version).to.eq(0);
       expect(skill.createdAt.toNumber()).to.be.greaterThan(0);
       expect(skill.updatedAt.toNumber()).to.eq(0);
@@ -231,7 +234,7 @@ describe("nara-skills-hub", () => {
 
     it("rejects names shorter than 5 bytes (NameTooShort)", async () => {
       try {
-        await doRegisterSkill("abcd"); // 4 chars < 5 minimum
+        await doRegisterSkill("abcd");
         expect.fail("expected error");
       } catch (e: any) {
         expect(e.error?.errorCode?.code ?? e.message).to.include("NameTooShort");
@@ -270,7 +273,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const d = await program.account.skillDescription.fetch(descPDA(skillKey));
-      expect(d.description).to.eq(desc);
+      expect(zcString(d.description as number[], d.descriptionLen)).to.eq(desc);
     });
 
     it("updates the description on subsequent calls", async () => {
@@ -287,7 +290,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const d = await program.account.skillDescription.fetch(descPDA(skillKey));
-      expect(d.description).to.eq(newDesc);
+      expect(zcString(d.description as number[], d.descriptionLen)).to.eq(newDesc);
     });
 
     it("rejects non-authority signer", async () => {
@@ -353,7 +356,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const meta = await program.account.skillMetadata.fetch(metaPDA(skillKey));
-      expect(meta.data).to.eq(json);
+      expect(zcString(meta.data as number[], meta.dataLen)).to.eq(json);
     });
 
     it("overwrites metadata on subsequent calls", async () => {
@@ -370,7 +373,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const meta = await program.account.skillMetadata.fetch(metaPDA(skillKey));
-      expect(meta.data).to.eq(updated);
+      expect(zcString(meta.data as number[], meta.dataLen)).to.eq(updated);
     });
 
     it("rejects non-authority signer", async () => {
@@ -393,7 +396,7 @@ describe("nara-skills-hub", () => {
       }
     });
 
-    it("rejects data longer than 4096 bytes (MetadataTooLong)", async () => {
+    it("rejects data longer than 800 bytes (MetadataTooLong)", async () => {
       const skillKey = skillPDA(NAME);
       try {
         await program.methods
@@ -489,7 +492,6 @@ describe("nara-skills-hub", () => {
   // ── buffer upload: new skill content ─────────────────────────────────────
   describe("buffer upload (new skill)", () => {
     const NAME = "buffer-skill-01";
-    // Intentionally > 800 bytes to exercise multi-chunk upload
     const CONTENT = Buffer.from(
       "You are a professional poet specialising in haiku. " +
         "Write expressive, evocative poems that capture emotion and imagery " +
@@ -509,10 +511,8 @@ describe("nara-skills-hub", () => {
       const contentKp = Keypair.generate();
       const totalLen = CONTENT.length;
 
-      // Client pre-creates buffer account (owner = program).
       await createProgramAccount(bufferKp, SKILL_BUFFER_HEADER + totalLen);
 
-      // init_buffer
       await program.methods
         .initBuffer(NAME, totalLen)
         .accountsStrict({
@@ -523,11 +523,10 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       let skill = await program.account.skillRecord.fetch(skillKey);
-      expect(skill.pendingBuffer?.toBase58()).to.eq(
+      expect(skill.pendingBuffer.toBase58()).to.eq(
         bufferKp.publicKey.toBase58()
       );
 
-      // Write in two chunks.
       const mid = Math.floor(totalLen / 2);
       await program.methods
         .writeToBuffer(NAME, 0, CONTENT.slice(0, mid))
@@ -547,10 +546,8 @@ describe("nara-skills-hub", () => {
         })
         .rpc();
 
-      // Client pre-creates content account (owner = program).
       await createProgramAccount(contentKp, SKILL_CONTENT_HEADER + totalLen);
 
-      // finalize_skill_new
       await program.methods
         .finalizeSkillNew(NAME)
         .accountsStrict({
@@ -562,18 +559,15 @@ describe("nara-skills-hub", () => {
         })
         .rpc();
 
-      // SkillRecord updated.
       skill = await program.account.skillRecord.fetch(skillKey);
       expect(skill.content.toBase58()).to.eq(contentKp.publicKey.toBase58());
-      expect(skill.pendingBuffer).to.be.null;
+      expect(skill.pendingBuffer.equals(NULL_KEY)).to.be.true;
       expect(skill.version).to.eq(1);
 
-      // Content bytes match.
       const info = await provider.connection.getAccountInfo(contentKp.publicKey);
       const stored = Buffer.from(info!.data.slice(SKILL_CONTENT_HEADER));
       expect(stored.toString()).to.eq(CONTENT.toString());
 
-      // Buffer account closed.
       const bufInfo = await provider.connection.getAccountInfo(bufferKp.publicKey);
       expect(bufInfo).to.be.null;
     });
@@ -645,7 +639,6 @@ describe("nara-skills-hub", () => {
     });
 
     it("rejects write that would exceed total_len (WriteOutOfBounds)", async () => {
-      // buffer total_len = 100, write_offset = 10; 10 + 95 = 105 > 100
       try {
         await program.methods
           .writeToBuffer(NAME, 10, Buffer.alloc(95))
@@ -753,7 +746,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
-      expect(skill.pendingBuffer).to.be.null;
+      expect(skill.pendingBuffer.equals(NULL_KEY)).to.be.true;
     });
 
     it("allows a fresh upload after close_buffer", async () => {
@@ -769,7 +762,7 @@ describe("nara-skills-hub", () => {
         .rpc();
 
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
-      expect(skill.pendingBuffer?.toBase58()).to.eq(buf2.publicKey.toBase58());
+      expect(skill.pendingBuffer.toBase58()).to.eq(buf2.publicKey.toBase58());
 
       // Cleanup
       await program.methods
@@ -804,7 +797,6 @@ describe("nara-skills-hub", () => {
           buffer: bufKp.publicKey,
         })
         .rpc();
-      // Write only half — buffer remains incomplete
       await program.methods
         .writeToBuffer(NAME, 0, Buffer.alloc(10))
         .accountsStrict({
@@ -863,7 +855,6 @@ describe("nara-skills-hub", () => {
 
       await doRegisterSkill(NAME);
 
-      // Upload v1
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + V1.length);
       await program.methods
         .initBuffer(NAME, V1.length)
@@ -929,19 +920,16 @@ describe("nara-skills-hub", () => {
         })
         .rpc();
 
-      // SkillRecord points to v2.
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.content.toBase58()).to.eq(contentV2Kp.publicKey.toBase58());
-      expect(skill.pendingBuffer).to.be.null;
+      expect(skill.pendingBuffer.equals(NULL_KEY)).to.be.true;
       expect(skill.version).to.eq(2);
 
-      // v2 content bytes correct.
       const info = await provider.connection.getAccountInfo(contentV2Kp.publicKey);
       expect(Buffer.from(info!.data.slice(SKILL_CONTENT_HEADER)).toString()).to.eq(
         V2.toString()
       );
 
-      // Old content account closed.
       const old = await provider.connection.getAccountInfo(contentV1Kp.publicKey);
       expect(old).to.be.null;
     });
@@ -1029,8 +1017,6 @@ describe("nara-skills-hub", () => {
       await createProgramAccount(dummyOldContent, SKILL_CONTENT_HEADER + data.length);
 
       try {
-        // skill.content == Pubkey::default(); ContentNotFound fires as a constraint
-        // on the skill account before old_content is validated.
         await program.methods
           .finalizeSkillUpdate(emptyName)
           .accountsStrict({
@@ -1074,7 +1060,6 @@ describe("nara-skills-hub", () => {
 
       await doRegisterSkill(NAME, authority.publicKey, "To Be Deleted");
 
-      // Set description and metadata.
       await program.methods
         .setDescription(NAME, "A skill that will be deleted.")
         .accountsStrict({
@@ -1095,7 +1080,6 @@ describe("nara-skills-hub", () => {
         })
         .rpc();
 
-      // Upload content.
       await createProgramAccount(bufKp, SKILL_BUFFER_HEADER + CONTENT.length);
       await program.methods
         .initBuffer(NAME, CONTENT.length)
@@ -1144,7 +1128,7 @@ describe("nara-skills-hub", () => {
       await doRegisterSkill(NAME, authority.publicKey, "Reborn");
 
       const skill = await program.account.skillRecord.fetch(skillKey);
-      expect(skill.author).to.eq("Reborn");
+      expect(zcString(skill.author as number[], skill.authorLen)).to.eq("Reborn");
       expect(skill.version).to.eq(0);
     });
 
@@ -1159,7 +1143,7 @@ describe("nara-skills-hub", () => {
             skill: skillKey,
             description: descPDA(skillKey),
             metadata: metaPDA(skillKey),
-            contentAccount: authority.publicKey, // no content, dummy
+            contentAccount: authority.publicKey,
             systemProgram: SystemProgram.programId,
           })
           .signers([other])

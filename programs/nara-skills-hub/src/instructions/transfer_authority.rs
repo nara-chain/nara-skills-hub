@@ -10,9 +10,8 @@ pub struct TransferAuthority<'info> {
         mut,
         seeds = [b"skill", name.as_bytes()],
         bump,
-        has_one = authority @ SkillHubError::Unauthorized,
     )]
-    pub skill: Account<'info, SkillRecord>,
+    pub skill: AccountLoader<'info, SkillRecord>,
 }
 
 pub fn transfer_authority(
@@ -20,10 +19,12 @@ pub fn transfer_authority(
     _name: String,
     new_authority: Pubkey,
 ) -> Result<()> {
+    let mut skill = ctx.accounts.skill.load_mut()?;
+    require_keys_eq!(skill.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
     require!(
-        ctx.accounts.skill.pending_buffer.is_none(),
+        skill.pending_buffer == Pubkey::default(),
         SkillHubError::HasPendingBuffer
     );
-    ctx.accounts.skill.authority = new_authority;
+    skill.authority = new_authority;
     Ok(())
 }

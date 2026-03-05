@@ -13,10 +13,9 @@ pub struct DeleteSkill<'info> {
         mut,
         seeds = [b"skill", name.as_bytes()],
         bump,
-        has_one = authority @ SkillHubError::Unauthorized,
         close = authority,
     )]
-    pub skill: Account<'info, SkillRecord>,
+    pub skill: AccountLoader<'info, SkillRecord>,
     /// CHECK: SkillDescription PDA (seeds = [b"desc", skill]).
     ///        Closed inside the handler if it has been created.
     #[account(
@@ -40,20 +39,23 @@ pub struct DeleteSkill<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Delete a skill, closing all associated accounts and returning rent to the authority.
-/// Requires no pending buffer — call `close_buffer` first if one exists.
-/// After deletion the skill name can be re-registered.
 pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
-    require!(
-        ctx.accounts.skill.pending_buffer.is_none(),
-        SkillHubError::HasPendingBuffer
-    );
+    let (content_key, has_content, has_pending) = {
+        let skill = ctx.accounts.skill.load()?;
+        require_keys_eq!(skill.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
+        (
+            skill.content,
+            skill.content != Pubkey::default(),
+            skill.pending_buffer != Pubkey::default(),
+        )
+    };
 
-    // Close SkillContent if the skill has content.
-    if ctx.accounts.skill.content != Pubkey::default() {
+    require!(!has_pending, SkillHubError::HasPendingBuffer);
+
+    if has_content {
         require_keys_eq!(
             ctx.accounts.content_account.key(),
-            ctx.accounts.skill.content,
+            content_key,
             SkillHubError::ContentMismatch
         );
         close_raw_account(
@@ -62,7 +64,6 @@ pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
         )?;
     }
 
-    // Close SkillDescription if it has been created (lamports > 0).
     if ctx.accounts.description.lamports() > 0 {
         close_raw_account(
             &ctx.accounts.description.to_account_info(),
@@ -70,7 +71,6 @@ pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
         )?;
     }
 
-    // Close SkillMetadata if it has been created (lamports > 0).
     if ctx.accounts.metadata.lamports() > 0 {
         close_raw_account(
             &ctx.accounts.metadata.to_account_info(),
@@ -78,12 +78,9 @@ pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
         )?;
     }
 
-    // SkillRecord is closed by the `close = authority` constraint after this handler returns.
     Ok(())
 }
 
-/// Drain lamports, zero data, and reassign owner to system program — equivalent
-/// to Anchor's `close = destination` constraint.
 fn close_raw_account(account: &AccountInfo, destination: &AccountInfo) -> Result<()> {
     let lamports = account.lamports();
     **account.try_borrow_mut_lamports()? = 0;

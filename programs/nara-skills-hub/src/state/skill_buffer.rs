@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 /// Client-created zero-copy account (owner = program) used for chunked uploads.
-/// Fixed header (80 bytes) followed by raw data bytes.
+/// Fixed header followed by raw data bytes.
 ///
 /// The client calls `system_program::create_account` with
 ///   `space = SkillBuffer::required_size(total_len), owner = program_id`
@@ -19,12 +19,12 @@ pub struct SkillBuffer {
     /// Current write cursor. Each `write_to_buffer` call advances this.
     /// Client supplies the expected offset; contract rejects mismatches.
     pub write_offset: u32,
-    // Raw data bytes follow at offset HEADER_SIZE (not declared as a field).
+    pub _reserved: [u8; 64],
 }
 
 impl SkillBuffer {
-    /// Discriminator (8) + authority (32) + skill (32) + total_len (4) + write_offset (4).
-    pub const HEADER_SIZE: usize = 8 + 32 + 32 + 4 + 4;
+    /// Discriminator (8) + struct fields.
+    pub const HEADER_SIZE: usize = 8 + std::mem::size_of::<Self>();
 
     pub fn required_size(data_len: usize) -> usize {
         Self::HEADER_SIZE + data_len

@@ -11,18 +11,15 @@ pub struct FinalizeSkillNew<'info> {
         mut,
         seeds = [b"skill", name.as_bytes()],
         bump,
-        has_one = authority @ SkillHubError::Unauthorized,
     )]
-    pub skill: Account<'info, SkillRecord>,
+    pub skill: AccountLoader<'info, SkillRecord>,
     #[account(
         mut,
-        constraint = Some(buffer.key()) == skill.pending_buffer @ SkillHubError::BufferMismatch,
         close = authority,
     )]
     pub buffer: AccountLoader<'info, SkillBuffer>,
     /// CHECK: pre-created by the client (owner = this program,
     /// space = SkillContent::required_size(total_len)).
-    /// This instruction writes the discriminator + header + content bytes.
     #[account(
         mut,
         owner = crate::ID @ SkillHubError::InvalidContentOwner,
@@ -31,24 +28,21 @@ pub struct FinalizeSkillNew<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Finalise a buffer upload for a skill that has **no existing content**.
-///
-/// 1. Validates buffer is fully written.
-/// 2. Writes SkillContent header + content bytes into `new_content`.
-/// 3. Sets `skill.content = new_content`, clears `pending_buffer`.
-/// 4. `close = authority` returns buffer rent to authority after this handler.
 pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Result<()> {
     let total_len = {
         let buf = ctx.accounts.buffer.load()?;
         require_keys_eq!(buf.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
         require!(buf.write_offset == buf.total_len, SkillHubError::BufferIncomplete);
         buf.total_len as usize
-    }; // Ref dropped
+    };
 
-    require!(
-        ctx.accounts.skill.content == Pubkey::default(),
-        SkillHubError::ContentAlreadyExists
-    );
+    {
+        let skill = ctx.accounts.skill.load()?;
+        require_keys_eq!(skill.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
+        require_keys_eq!(ctx.accounts.buffer.key(), skill.pending_buffer, SkillHubError::BufferMismatch);
+        require!(skill.content == Pubkey::default(), SkillHubError::ContentAlreadyExists);
+    }
+
     require!(
         ctx.accounts.new_content.data_len() == SkillContent::required_size(total_len),
         SkillHubError::InvalidContentSize
@@ -64,12 +58,13 @@ pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Resu
         let mut nc = ctx.accounts.new_content.try_borrow_mut_data()?;
         nc[..8].copy_from_slice(&SkillContent::DISCRIMINATOR);
         nc[8..40].copy_from_slice(skill_key.as_ref());
-        nc[40..40 + total_len].copy_from_slice(slice);
+        // reserved bytes (40..HEADER_SIZE) are already zero
+        nc[SkillContent::HEADER_SIZE..SkillContent::HEADER_SIZE + total_len].copy_from_slice(slice);
     }
 
-    let skill = &mut ctx.accounts.skill;
+    let mut skill = ctx.accounts.skill.load_mut()?;
     skill.content = ctx.accounts.new_content.key();
-    skill.pending_buffer = None;
+    skill.pending_buffer = Pubkey::default();
     skill.version = 1;
     skill.updated_at = Clock::get()?.unix_timestamp;
     Ok(())

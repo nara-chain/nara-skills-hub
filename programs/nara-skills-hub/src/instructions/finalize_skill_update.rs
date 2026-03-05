@@ -12,13 +12,10 @@ pub struct FinalizeSkillUpdate<'info> {
         mut,
         seeds = [b"skill", name.as_bytes()],
         bump,
-        has_one = authority @ SkillHubError::Unauthorized,
-        constraint = skill.content != Pubkey::default() @ SkillHubError::ContentNotFound,
     )]
-    pub skill: Account<'info, SkillRecord>,
+    pub skill: AccountLoader<'info, SkillRecord>,
     #[account(
         mut,
-        constraint = Some(buffer.key()) == skill.pending_buffer @ SkillHubError::BufferMismatch,
         close = authority,
     )]
     pub buffer: AccountLoader<'info, SkillBuffer>,
@@ -29,29 +26,28 @@ pub struct FinalizeSkillUpdate<'info> {
         owner = crate::ID @ SkillHubError::InvalidContentOwner,
     )]
     pub new_content: UncheckedAccount<'info>,
-    /// CHECK: existing SkillContent account to close. Must equal skill.content.
-    #[account(
-        mut,
-        constraint = old_content.key() == skill.content @ SkillHubError::ContentMismatch,
-    )]
+    /// CHECK: existing SkillContent account to close.
+    #[account(mut)]
     pub old_content: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
-/// Finalise a buffer upload that **replaces existing content**.
-///
-/// 1. Validates buffer is fully written and skill already has content.
-/// 2. Closes `old_content` (drain lamports → authority, zero data, reassign owner).
-/// 3. Writes SkillContent header + content bytes into `new_content`.
-/// 4. Sets `skill.content = new_content`, clears `pending_buffer`.
-/// 5. `close = authority` returns buffer rent to authority after this handler.
 pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -> Result<()> {
     let total_len = {
         let buf = ctx.accounts.buffer.load()?;
         require_keys_eq!(buf.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
         require!(buf.write_offset == buf.total_len, SkillHubError::BufferIncomplete);
         buf.total_len as usize
-    }; // Ref dropped
+    };
+
+    let content_key = {
+        let skill = ctx.accounts.skill.load()?;
+        require_keys_eq!(skill.authority, ctx.accounts.authority.key(), SkillHubError::Unauthorized);
+        require_keys_eq!(ctx.accounts.buffer.key(), skill.pending_buffer, SkillHubError::BufferMismatch);
+        require!(skill.content != Pubkey::default(), SkillHubError::ContentNotFound);
+        skill.content
+    };
+    require_keys_eq!(ctx.accounts.old_content.key(), content_key, SkillHubError::ContentMismatch);
 
     require!(
         ctx.accounts.new_content.data_len() == SkillContent::required_size(total_len),
@@ -60,7 +56,7 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
 
     let skill_key = ctx.accounts.skill.key();
 
-    // Close old_content — mirrors Anchor's `close = authority` constraint.
+    // Close old_content
     {
         let old_lamports = ctx.accounts.old_content.lamports();
         **ctx.accounts.old_content.try_borrow_mut_lamports()? = 0;
@@ -78,12 +74,12 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
         let mut nc = ctx.accounts.new_content.try_borrow_mut_data()?;
         nc[..8].copy_from_slice(&SkillContent::DISCRIMINATOR);
         nc[8..40].copy_from_slice(skill_key.as_ref());
-        nc[40..40 + total_len].copy_from_slice(slice);
+        nc[SkillContent::HEADER_SIZE..SkillContent::HEADER_SIZE + total_len].copy_from_slice(slice);
     }
 
-    let skill = &mut ctx.accounts.skill;
+    let mut skill = ctx.accounts.skill.load_mut()?;
     skill.content = ctx.accounts.new_content.key();
-    skill.pending_buffer = None;
+    skill.pending_buffer = Pubkey::default();
     skill.version += 1;
     skill.updated_at = Clock::get()?.unix_timestamp;
     Ok(())
