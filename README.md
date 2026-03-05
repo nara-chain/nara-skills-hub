@@ -5,7 +5,7 @@
 
 `Nara Skill Hub` is an on-chain registry built with Solana + Anchor 0.32.1 for registering, versioning, updating, discovering, and governing AI agent skills.
 
-- **Program ID**: `SkiLLHub11111111111111111111111111111111111`
+- **Program ID**: `54CFypri3UxCawUCLNvFebvpE1qWssKmVfk7RoKzLTkU`
 - **Positioning Keywords**: Skill Assetization / Prompt Liquidity / On-chain Capability Layer / Verifiable Agent Infrastructure
 
 ---
@@ -67,12 +67,16 @@ In most agent stacks, skills are still treated as opaque config blobs:
 
 ## 3. Core Accounts
 
-- `ProgramConfig`: admin, registration fee, fee recipient
-- `SkillRecord`: canonical skill state (authority / name / author / version / content / pending_buffer)
-- `SkillDescription`: human-readable description (max 512 bytes)
-- `SkillMetadata`: extensible JSON metadata (max 800 bytes)
-- `SkillBuffer`: chunked upload buffer with resumable semantics
-- `SkillContent`: finalized active content account
+All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte reserved space for future extensibility.
+
+- `ProgramConfig` — PDA (`["config"]`): admin, registration fee, fee recipient
+- `SkillRecord` — PDA (`["skill", name]`): canonical skill state (authority / name / author / version / content / pending_buffer)
+- `SkillDescription` — PDA (`["desc", skill_key]`): human-readable description (max 512 bytes)
+- `SkillMetadata` — PDA (`["meta", skill_key]`): extensible JSON metadata (max 800 bytes)
+- `SkillBuffer` — client-created (keypair): chunked upload buffer with resumable semantics
+- `SkillContent` — client-created (keypair): finalized active content account
+
+> `SkillBuffer` and `SkillContent` are **not PDAs** — clients call `SystemProgram.createAccount` to allocate them, avoiding the CPI 10K realloc limit.
 
 ---
 
@@ -84,7 +88,7 @@ In most agent stacks, skills are still treated as opaque config blobs:
 | 2 | `update_admin(new_admin)` | Transfers admin authority |
 | 3 | `update_fee_recipient(new_recipient)` | Updates registration fee recipient |
 | 4 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
-| 5 | `register_skill(name, author)` | Registers a skill (name min 5 bytes, author max 64 bytes) |
+| 5 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, author max 64 bytes) |
 | 6 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
 | 7 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
 | 8 | `init_buffer(name, total_len)` | Initializes upload buffer |
@@ -159,7 +163,7 @@ Together these invariants define a recoverable, upgradeable, and governable skil
 
 ## 7. Error Surface (Selected)
 
-- `NameTooShort`
+- `NameTooShort` / `NameTooLong`
 - `AuthorTooLong`
 - `DescriptionTooLong`
 - `MetadataTooLong`
@@ -206,6 +210,8 @@ programs/nara-skills-hub/src/
     ├── close_buffer.rs
     ├── update_metadata.rs
     └── delete_skill.rs
+scripts/
+└── init.ts              # standalone config init (tsx)
 ```
 
 ---
