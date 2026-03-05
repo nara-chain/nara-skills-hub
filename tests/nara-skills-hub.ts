@@ -241,6 +241,15 @@ describe("nara-skills-hub", () => {
       }
     });
 
+    it("rejects names with uppercase letters (NameNotLowercase)", async () => {
+      try {
+        await doRegisterSkill("Hello-World");
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("NameNotLowercase");
+      }
+    });
+
     it("rejects author names longer than 64 bytes (AuthorTooLong)", async () => {
       try {
         await doRegisterSkill("long-auth-01", authority.publicKey, "A".repeat(65));

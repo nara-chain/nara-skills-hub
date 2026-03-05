@@ -40,6 +40,8 @@ pub enum SkillHubError {
     InvalidFeeRecipient,
     #[msg("Author name too long: max 64 bytes")]
     AuthorTooLong,
+    #[msg("Name must be lowercase: uppercase letters are not allowed")]
+    NameNotLowercase,
     #[msg("Metadata too long: max 800 bytes")]
     MetadataTooLong,
 }

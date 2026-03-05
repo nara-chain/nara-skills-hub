@@ -30,6 +30,7 @@ pub struct RegisterSkill<'info> {
 pub fn register_skill(ctx: Context<RegisterSkill>, name: String, author: String) -> Result<()> {
     require!(name.len() >= MIN_NAME_LEN, SkillHubError::NameTooShort);
     require!(name.len() <= SkillRecord::MAX_NAME_LEN, SkillHubError::NameTooLong);
+    require!(!name.chars().any(|c| c.is_uppercase()), SkillHubError::NameNotLowercase);
     require!(author.len() <= MAX_AUTHOR_LEN, SkillHubError::AuthorTooLong);
 
     let (fee, expected_recipient) = {

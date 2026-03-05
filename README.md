@@ -88,7 +88,7 @@ All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte re
 | 2 | `update_admin(new_admin)` | Transfers admin authority |
 | 3 | `update_fee_recipient(new_recipient)` | Updates registration fee recipient |
 | 4 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
-| 5 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, author max 64 bytes) |
+| 5 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, **lowercase only**, author max 64 bytes) |
 | 6 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
 | 7 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
 | 8 | `init_buffer(name, total_len)` | Initializes upload buffer |
@@ -163,7 +163,7 @@ Together these invariants define a recoverable, upgradeable, and governable skil
 
 ## 7. Error Surface (Selected)
 
-- `NameTooShort` / `NameTooLong`
+- `NameTooShort` / `NameTooLong` / `NameNotLowercase`
 - `AuthorTooLong`
 - `DescriptionTooLong`
 - `MetadataTooLong`
