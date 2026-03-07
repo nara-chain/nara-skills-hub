@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::system_program as sol_system;
 use crate::state::SkillRecord;
 use crate::error::SkillHubError;
 
@@ -36,7 +35,6 @@ pub struct DeleteSkill<'info> {
     ///        Pass any account (e.g. authority) when skill has no content.
     #[account(mut)]
     pub content_account: UncheckedAccount<'info>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
@@ -58,34 +56,25 @@ pub fn delete_skill(ctx: Context<DeleteSkill>, _name: String) -> Result<()> {
             content_key,
             SkillHubError::ContentMismatch
         );
-        close_raw_account(
+        super::close_raw_account(
             &ctx.accounts.content_account.to_account_info(),
             &ctx.accounts.authority.to_account_info(),
         )?;
     }
 
     if ctx.accounts.description.lamports() > 0 {
-        close_raw_account(
+        super::close_raw_account(
             &ctx.accounts.description.to_account_info(),
             &ctx.accounts.authority.to_account_info(),
         )?;
     }
 
     if ctx.accounts.metadata.lamports() > 0 {
-        close_raw_account(
+        super::close_raw_account(
             &ctx.accounts.metadata.to_account_info(),
             &ctx.accounts.authority.to_account_info(),
         )?;
     }
 
-    Ok(())
-}
-
-fn close_raw_account(account: &AccountInfo, destination: &AccountInfo) -> Result<()> {
-    let lamports = account.lamports();
-    **account.try_borrow_mut_lamports()? = 0;
-    **destination.try_borrow_mut_lamports()? += lamports;
-    account.assign(&sol_system::ID);
-    account.try_borrow_mut_data()?.fill(0);
     Ok(())
 }

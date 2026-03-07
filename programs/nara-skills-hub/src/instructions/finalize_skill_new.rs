@@ -25,7 +25,6 @@ pub struct FinalizeSkillNew<'info> {
         owner = crate::ID @ SkillHubError::InvalidContentOwner,
     )]
     pub new_content: UncheckedAccount<'info>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Result<()> {
@@ -47,6 +46,10 @@ pub fn finalize_skill_new(ctx: Context<FinalizeSkillNew>, _name: String) -> Resu
         ctx.accounts.new_content.data_len() == SkillContent::required_size(total_len),
         SkillHubError::InvalidContentSize
     );
+
+    let nc_data = ctx.accounts.new_content.try_borrow_data()?;
+    require!(nc_data[..8] == [0u8; 8], SkillHubError::ContentAlreadyInitialized);
+    drop(nc_data);
 
     let skill_key = ctx.accounts.skill.key();
 

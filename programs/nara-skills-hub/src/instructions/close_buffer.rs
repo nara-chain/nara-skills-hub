@@ -18,7 +18,6 @@ pub struct CloseBuffer<'info> {
         close = authority,
     )]
     pub buffer: AccountLoader<'info, SkillBuffer>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn close_buffer(ctx: Context<CloseBuffer>, _name: String) -> Result<()> {

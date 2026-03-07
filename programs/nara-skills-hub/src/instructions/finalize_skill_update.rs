@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::system_program as sol_system;
 use crate::state::{SkillRecord, SkillBuffer, SkillContent};
 use crate::error::SkillHubError;
 
@@ -27,9 +26,11 @@ pub struct FinalizeSkillUpdate<'info> {
     )]
     pub new_content: UncheckedAccount<'info>,
     /// CHECK: existing SkillContent account to close.
-    #[account(mut)]
+    #[account(
+        mut,
+        owner = crate::ID @ SkillHubError::InvalidContentOwner,
+    )]
     pub old_content: UncheckedAccount<'info>,
-    pub system_program: Program<'info, System>,
 }
 
 pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -> Result<()> {
@@ -49,21 +50,32 @@ pub fn finalize_skill_update(ctx: Context<FinalizeSkillUpdate>, _name: String) -
     };
     require_keys_eq!(ctx.accounts.old_content.key(), content_key, SkillHubError::ContentMismatch);
 
+    let old_data = ctx.accounts.old_content.try_borrow_data()?;
+    require!(old_data[..8] == *SkillContent::DISCRIMINATOR, SkillHubError::ContentMismatch);
+    require!(old_data[8..40] == *ctx.accounts.skill.key().as_ref(), SkillHubError::ContentMismatch);
+    drop(old_data);
+
     require!(
         ctx.accounts.new_content.data_len() == SkillContent::required_size(total_len),
         SkillHubError::InvalidContentSize
     );
 
+    require!(
+        ctx.accounts.new_content.key() != ctx.accounts.old_content.key(),
+        SkillHubError::ContentSelfReference
+    );
+
+    let nc_data = ctx.accounts.new_content.try_borrow_data()?;
+    require!(nc_data[..8] == [0u8; 8], SkillHubError::ContentAlreadyInitialized);
+    drop(nc_data);
+
     let skill_key = ctx.accounts.skill.key();
 
     // Close old_content
-    {
-        let old_lamports = ctx.accounts.old_content.lamports();
-        **ctx.accounts.old_content.try_borrow_mut_lamports()? = 0;
-        **ctx.accounts.authority.try_borrow_mut_lamports()? += old_lamports;
-        ctx.accounts.old_content.to_account_info().assign(&sol_system::ID);
-        ctx.accounts.old_content.try_borrow_mut_data()?.fill(0);
-    }
+    super::close_raw_account(
+        &ctx.accounts.old_content.to_account_info(),
+        &ctx.accounts.authority.to_account_info(),
+    )?;
 
     // Write new_content header + content bytes.
     {

@@ -492,7 +492,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -564,7 +563,6 @@ describe("nara-skills-hub", () => {
           skill: skillKey,
           buffer: bufferKp.publicKey,
           newContent: contentKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -733,7 +731,6 @@ describe("nara-skills-hub", () => {
             authority: other.publicKey,
             skill: skillPDA(NAME),
             buffer: buf1.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .signers([other])
           .rpc();
@@ -750,7 +747,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf1.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -780,7 +776,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: buf2.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -826,7 +821,6 @@ describe("nara-skills-hub", () => {
             skill: skillPDA(NAME),
             buffer: bufKp.publicKey,
             newContent: contentKp.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .rpc();
         expect.fail("expected error");
@@ -843,7 +837,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -889,7 +882,6 @@ describe("nara-skills-hub", () => {
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
           newContent: contentV1Kp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -925,7 +917,6 @@ describe("nara-skills-hub", () => {
           buffer: bufV2Kp.publicKey,
           newContent: contentV2Kp.publicKey,
           oldContent: contentV1Kp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -975,7 +966,6 @@ describe("nara-skills-hub", () => {
             skill: skillPDA(NAME),
             buffer: bufKp.publicKey,
             newContent: contentKp.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .rpc();
         expect.fail("expected error");
@@ -992,7 +982,142 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
-          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+    });
+
+    it("rejects reusing another skill's content account (ContentAlreadyInitialized)", async () => {
+      const NAME_A = "reuse-cont-a1";
+      const NAME_B = "reuse-cont-b1";
+      const data = Buffer.from("shared size content!");
+
+      // Finalize Skill A with content
+      await doRegisterSkill(NAME_A);
+      const bufA = Keypair.generate();
+      const contentA = Keypair.generate();
+      await createProgramAccount(bufA, SKILL_BUFFER_HEADER + data.length);
+      await program.methods
+        .initBuffer(NAME_A, data.length)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_A), buffer: bufA.publicKey })
+        .rpc();
+      await program.methods
+        .writeToBuffer(NAME_A, 0, data)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_A), buffer: bufA.publicKey })
+        .rpc();
+      await createProgramAccount(contentA, SKILL_CONTENT_HEADER + data.length);
+      await program.methods
+        .finalizeSkillNew(NAME_A)
+        .accountsStrict({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME_A),
+          buffer: bufA.publicKey,
+          newContent: contentA.publicKey,
+        })
+        .rpc();
+
+      // Try to finalize Skill B using Skill A's content account
+      await doRegisterSkill(NAME_B);
+      const bufB = Keypair.generate();
+      await createProgramAccount(bufB, SKILL_BUFFER_HEADER + data.length);
+      await program.methods
+        .initBuffer(NAME_B, data.length)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_B), buffer: bufB.publicKey })
+        .rpc();
+      await program.methods
+        .writeToBuffer(NAME_B, 0, data)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_B), buffer: bufB.publicKey })
+        .rpc();
+
+      try {
+        await program.methods
+          .finalizeSkillNew(NAME_B)
+          .accountsStrict({
+            authority: authority.publicKey,
+            skill: skillPDA(NAME_B),
+            buffer: bufB.publicKey,
+            newContent: contentA.publicKey,
+          })
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("ContentAlreadyInitialized");
+      }
+
+      // Cleanup
+      await program.methods
+        .closeBuffer(NAME_B)
+        .accountsStrict({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME_B),
+          buffer: bufB.publicKey,
+        })
+        .rpc();
+    });
+
+    it("rejects new_content === old_content (ContentSelfReference)", async () => {
+      const NAME_S = "self-ref-test";
+      const data = Buffer.from("self ref content");
+
+      // Register and finalize
+      await doRegisterSkill(NAME_S);
+      const buf1 = Keypair.generate();
+      const content1 = Keypair.generate();
+      await createProgramAccount(buf1, SKILL_BUFFER_HEADER + data.length);
+      await program.methods
+        .initBuffer(NAME_S, data.length)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_S), buffer: buf1.publicKey })
+        .rpc();
+      await program.methods
+        .writeToBuffer(NAME_S, 0, data)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_S), buffer: buf1.publicKey })
+        .rpc();
+      await createProgramAccount(content1, SKILL_CONTENT_HEADER + data.length);
+      await program.methods
+        .finalizeSkillNew(NAME_S)
+        .accountsStrict({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME_S),
+          buffer: buf1.publicKey,
+          newContent: content1.publicKey,
+        })
+        .rpc();
+
+      // Init update buffer
+      const buf2 = Keypair.generate();
+      await createProgramAccount(buf2, SKILL_BUFFER_HEADER + data.length);
+      await program.methods
+        .initBuffer(NAME_S, data.length)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_S), buffer: buf2.publicKey })
+        .rpc();
+      await program.methods
+        .writeToBuffer(NAME_S, 0, data)
+        .accountsStrict({ authority: authority.publicKey, skill: skillPDA(NAME_S), buffer: buf2.publicKey })
+        .rpc();
+
+      // Try finalize_skill_update with newContent === oldContent
+      try {
+        await program.methods
+          .finalizeSkillUpdate(NAME_S)
+          .accountsStrict({
+            authority: authority.publicKey,
+            skill: skillPDA(NAME_S),
+            buffer: buf2.publicKey,
+            newContent: content1.publicKey,
+            oldContent: content1.publicKey,
+          })
+          .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("ContentSelfReference");
+      }
+
+      // Cleanup
+      await program.methods
+        .closeBuffer(NAME_S)
+        .accountsStrict({
+          authority: authority.publicKey,
+          skill: skillPDA(NAME_S),
+          buffer: buf2.publicKey,
         })
         .rpc();
     });
@@ -1034,7 +1159,6 @@ describe("nara-skills-hub", () => {
             buffer: bufKp2.publicKey,
             newContent: contentKp2.publicKey,
             oldContent: dummyOldContent.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .rpc();
         expect.fail("expected error");
@@ -1051,7 +1175,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillPDA(emptyName),
           buffer: bufKp2.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -1106,7 +1229,6 @@ describe("nara-skills-hub", () => {
           skill: skillPDA(NAME),
           buffer: bufKp.publicKey,
           newContent: contentKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });
@@ -1122,7 +1244,6 @@ describe("nara-skills-hub", () => {
           description: descPDA(skillKey),
           metadata: metaPDA(skillKey),
           contentAccount: contentKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
 
@@ -1153,7 +1274,6 @@ describe("nara-skills-hub", () => {
             description: descPDA(skillKey),
             metadata: metaPDA(skillKey),
             contentAccount: authority.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .signers([other])
           .rpc();
@@ -1184,7 +1304,6 @@ describe("nara-skills-hub", () => {
             description: descPDA(skillKey),
             metadata: metaPDA(skillKey),
             contentAccount: authority.publicKey,
-            systemProgram: SystemProgram.programId,
           })
           .rpc();
         expect.fail("expected error");
@@ -1199,7 +1318,6 @@ describe("nara-skills-hub", () => {
           authority: authority.publicKey,
           skill: skillKey,
           buffer: bufKp.publicKey,
-          systemProgram: SystemProgram.programId,
         })
         .rpc();
     });

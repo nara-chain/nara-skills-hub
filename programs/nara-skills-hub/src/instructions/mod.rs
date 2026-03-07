@@ -30,3 +30,15 @@ pub use update_fee_recipient::*;
 pub use update_metadata::*;
 pub use update_register_fee::*;
 pub use write_to_buffer::*;
+
+use anchor_lang::prelude::AccountInfo;
+
+pub(crate) fn close_raw_account<'info>(account: &AccountInfo<'info>, destination: &AccountInfo<'info>) -> anchor_lang::Result<()> {
+    use anchor_lang::solana_program::system_program as sol_system;
+    let lamports = account.lamports();
+    **account.try_borrow_mut_lamports()? = 0;
+    **destination.try_borrow_mut_lamports()? += lamports;
+    account.assign(&sol_system::ID);
+    account.try_borrow_mut_data()?.fill(0);
+    Ok(())
+}

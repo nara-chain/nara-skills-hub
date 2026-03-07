@@ -126,9 +126,11 @@ init_config()
 ### 5.3 Rolling Upgrade
 
 ```text
-1) init_buffer(name, M)
-2) write_to_buffer * K
-3) finalize_skill_update(name)
+1) [client] createAccount(buffer, SkillBuffer::required_size(M), program_id)
+2) init_buffer(name, M)
+3) write_to_buffer(name, offset_i, chunk_i) ...
+4) [client] createAccount(new_content, SkillContent::required_size(M), program_id)
+5) finalize_skill_update(name)
 └─ old content closed, rent returned, version++
 ```
 
@@ -155,6 +157,7 @@ init_config()
 - **Sequential Write Invariant**: writes must be strictly contiguous
 - **Authority Gate**: sensitive operations require authority/admin privileges
 - **Content Ownership Check**: buffer/content accounts must be owned by this program
+- **Content Integrity Check**: new content must be uninitialized; old content must carry correct discriminator; new and old content accounts must be distinct
 - **Bounded Strings**: strict limits on name/author/description/metadata fields
 
 Together these invariants define a recoverable, upgradeable, and governable skill state machine.
@@ -173,9 +176,9 @@ Together these invariants define a recoverable, upgradeable, and governable skil
 - `BufferIncomplete`
 - `PendingBufferExists`
 - `HasPendingBuffer`
-- `InvalidBufferOwner` / `InvalidBufferSize` / `BufferMismatch`
+- `InvalidBufferSize` / `BufferMismatch`
 - `InvalidContentOwner` / `InvalidContentSize` / `ContentMismatch`
-- `ContentAlreadyExists` / `ContentNotFound`
+- `ContentAlreadyExists` / `ContentNotFound` / `ContentAlreadyInitialized` / `ContentSelfReference`
 - `InvalidFeeRecipient`
 
 Full definitions: `programs/nara-skills-hub/src/error.rs`.

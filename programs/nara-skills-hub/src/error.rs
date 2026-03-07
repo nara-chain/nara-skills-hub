@@ -20,8 +20,6 @@ pub enum SkillHubError {
     PendingBufferExists,
     #[msg("Buffer account size does not match total_len")]
     InvalidBufferSize,
-    #[msg("Buffer account must be owned by this program")]
-    InvalidBufferOwner,
     #[msg("Buffer account does not match skill.pending_buffer")]
     BufferMismatch,
     #[msg("Content account must be owned by this program")]
@@ -42,6 +40,10 @@ pub enum SkillHubError {
     AuthorTooLong,
     #[msg("Name must be lowercase: uppercase letters are not allowed")]
     NameNotLowercase,
+    #[msg("new_content account is already initialized")]
+    ContentAlreadyInitialized,
+    #[msg("new_content must differ from old_content")]
+    ContentSelfReference,
     #[msg("Metadata too long: max 800 bytes")]
     MetadataTooLong,
 }
