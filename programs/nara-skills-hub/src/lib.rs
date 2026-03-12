@@ -25,10 +25,6 @@ pub mod nara_skills_hub {
         instructions::update_admin::update_admin(ctx, new_admin)
     }
 
-    pub fn update_fee_recipient(ctx: Context<UpdateFeeRecipient>, new_recipient: Pubkey) -> Result<()> {
-        instructions::update_fee_recipient::update_fee_recipient(ctx, new_recipient)
-    }
-
     pub fn update_register_fee(ctx: Context<UpdateRegisterFee>, new_fee: u64) -> Result<()> {
         instructions::update_register_fee::update_register_fee(ctx, new_fee)
     }
@@ -84,5 +80,9 @@ pub mod nara_skills_hub {
 
     pub fn delete_skill(ctx: Context<DeleteSkill>, name: String) -> Result<()> {
         instructions::delete_skill::delete_skill(ctx, name)
+    }
+
+    pub fn withdraw_fees(ctx: Context<WithdrawFees>, amount: u64) -> Result<()> {
+        instructions::withdraw_fees::withdraw_fees(ctx, amount)
     }
 }

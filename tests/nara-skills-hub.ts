@@ -51,6 +51,12 @@ describe("nara-skills-hub", () => {
       program.programId
     )[0];
 
+  const vaultPDA = (): PublicKey =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("fee_vault")],
+      program.programId
+    )[0];
+
   // ── Utility: create a raw account owned by the program ──────────────────
   async function createProgramAccount(kp: Keypair, size: number) {
     const lamports =
@@ -67,10 +73,9 @@ describe("nara-skills-hub", () => {
     await provider.sendAndConfirm(tx, [kp]);
   }
 
-  // ── Helper: register a skill with config + feeRecipient ─────────────────
+  // ── Helper: register a skill with config + fee vault ────────────────────
   async function doRegisterSkill(
     name: string,
-    feeRecipient: PublicKey = authority.publicKey,
     author: string = "anonymous"
   ) {
     await program.methods
@@ -79,7 +84,7 @@ describe("nara-skills-hub", () => {
         authority: authority.publicKey,
         skill: skillPDA(name),
         config: configPDA(),
-        feeRecipient,
+        feeVault: vaultPDA(),
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -99,11 +104,11 @@ describe("nara-skills-hub", () => {
 
   // ── program_config ────────────────────────────────────────────────────────
   describe("program_config", () => {
-    it("initializes with admin and 1 SOL default fee", async () => {
+    it("initializes with admin, 1 SOL default fee, and vault PDA", async () => {
       const cfg = await program.account.programConfig.fetch(configPDA());
       expect(cfg.admin.toBase58()).to.eq(authority.publicKey.toBase58());
       expect(cfg.registerFee.eq(ONE_SOL)).to.be.true;
-      expect(cfg.feeRecipient.toBase58()).to.eq(authority.publicKey.toBase58());
+      expect(cfg.feeVault.toBase58()).to.eq(vaultPDA().toBase58());
     });
 
     it("update_register_fee: admin can update", async () => {
@@ -123,24 +128,6 @@ describe("nara-skills-hub", () => {
       expect(cfg.registerFee.eq(ONE_SOL)).to.be.true;
     });
 
-    it("update_fee_recipient: admin can change and reset", async () => {
-      const newRecipient = Keypair.generate();
-      await program.methods
-        .updateFeeRecipient(newRecipient.publicKey)
-        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
-        .rpc();
-      let cfg = await program.account.programConfig.fetch(configPDA());
-      expect(cfg.feeRecipient.toBase58()).to.eq(
-        newRecipient.publicKey.toBase58()
-      );
-
-      // Reset to authority
-      await program.methods
-        .updateFeeRecipient(authority.publicKey)
-        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
-        .rpc();
-    });
-
     it("rejects non-admin on update_register_fee", async () => {
       const other = Keypair.generate();
       try {
@@ -155,52 +142,61 @@ describe("nara-skills-hub", () => {
       }
     });
 
-    it("rejects non-admin on update_fee_recipient", async () => {
-      const other = Keypair.generate();
-      try {
-        await program.methods
-          .updateFeeRecipient(other.publicKey)
-          .accountsStrict({ admin: other.publicKey, config: configPDA() })
-          .signers([other])
-          .rpc();
-        expect.fail("expected error");
-      } catch (e: any) {
-        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
-      }
-    });
-
-    it("collects fee when fee_recipient differs from authority", async () => {
-      const recipient = Keypair.generate();
-      const sig = await provider.connection.requestAirdrop(
-        recipient.publicKey,
-        web3.LAMPORTS_PER_SOL
-      );
-      await provider.connection.confirmTransaction(sig);
-
+    it("collects fee into vault PDA", async () => {
       const smallFee = new anchor.BN(10_000_000);
       await program.methods
         .updateRegisterFee(smallFee)
         .accountsStrict({ admin: authority.publicKey, config: configPDA() })
         .rpc();
-      await program.methods
-        .updateFeeRecipient(recipient.publicKey)
-        .accountsStrict({ admin: authority.publicKey, config: configPDA() })
-        .rpc();
 
       try {
-        const before = await provider.connection.getBalance(recipient.publicKey);
-        await doRegisterSkill("fee-test-01", recipient.publicKey);
-        const after = await provider.connection.getBalance(recipient.publicKey);
+        const before = await provider.connection.getBalance(vaultPDA());
+        await doRegisterSkill("fee-test-01");
+        const after = await provider.connection.getBalance(vaultPDA());
         expect(after - before).to.eq(10_000_000);
       } finally {
         await program.methods
           .updateRegisterFee(ONE_SOL)
           .accountsStrict({ admin: authority.publicKey, config: configPDA() })
           .rpc();
+      }
+    });
+
+    it("withdraw_fees: admin can withdraw from vault", async () => {
+      const vaultBalance = await provider.connection.getBalance(vaultPDA());
+      if (vaultBalance === 0) return; // skip if no fees collected
+
+      const before = await provider.connection.getBalance(authority.publicKey);
+      await program.methods
+        .withdrawFees(new anchor.BN(vaultBalance))
+        .accountsStrict({
+          admin: authority.publicKey,
+          config: configPDA(),
+          vault: vaultPDA(),
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+      const after = await provider.connection.getBalance(authority.publicKey);
+      // admin balance should increase (minus tx fee)
+      expect(after).to.be.greaterThan(before);
+    });
+
+    it("withdraw_fees: rejects non-admin", async () => {
+      const other = Keypair.generate();
+      try {
         await program.methods
-          .updateFeeRecipient(authority.publicKey)
-          .accountsStrict({ admin: authority.publicKey, config: configPDA() })
+          .withdrawFees(new anchor.BN(1))
+          .accountsStrict({
+            admin: other.publicKey,
+            config: configPDA(),
+            vault: vaultPDA(),
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([other])
           .rpc();
+        expect.fail("expected error");
+      } catch (e: any) {
+        expect(e.error?.errorCode?.code ?? e.message).to.include("Unauthorized");
       }
     });
   });
@@ -210,7 +206,7 @@ describe("nara-skills-hub", () => {
     const NAME = "test-skill-01";
 
     it("creates a new SkillRecord PDA", async () => {
-      await doRegisterSkill(NAME, authority.publicKey, "Test Author");
+      await doRegisterSkill(NAME, "Test Author");
 
       const skill = await program.account.skillRecord.fetch(skillPDA(NAME));
       expect(skill.authority.toBase58()).to.eq(authority.publicKey.toBase58());
@@ -252,7 +248,7 @@ describe("nara-skills-hub", () => {
 
     it("rejects author names longer than 64 bytes (AuthorTooLong)", async () => {
       try {
-        await doRegisterSkill("long-auth-01", authority.publicKey, "A".repeat(65));
+        await doRegisterSkill("long-auth-01", "A".repeat(65));
         expect.fail("expected error");
       } catch (e: any) {
         expect(e.error?.errorCode?.code ?? e.message).to.include("AuthorTooLong");
@@ -1190,7 +1186,7 @@ describe("nara-skills-hub", () => {
       const bufKp = Keypair.generate();
       const CONTENT = Buffer.from("skill content to be deleted");
 
-      await doRegisterSkill(NAME, authority.publicKey, "To Be Deleted");
+      await doRegisterSkill(NAME, "To Be Deleted");
 
       await program.methods
         .setDescription(NAME, "A skill that will be deleted.")
@@ -1255,7 +1251,7 @@ describe("nara-skills-hub", () => {
 
     it("allows re-registration with the same name after deletion", async () => {
       const skillKey = skillPDA(NAME);
-      await doRegisterSkill(NAME, authority.publicKey, "Reborn");
+      await doRegisterSkill(NAME, "Reborn");
 
       const skill = await program.account.skillRecord.fetch(skillKey);
       expect(zcString(skill.author as number[], skill.authorLen)).to.eq("Reborn");

@@ -21,9 +21,13 @@ pub struct RegisterSkill<'info> {
         bump,
     )]
     pub config: AccountLoader<'info, ProgramConfig>,
-    /// CHECK: must equal config.fee_recipient; validated in handler.
-    #[account(mut)]
-    pub fee_recipient: UncheckedAccount<'info>,
+    /// CHECK: vault PDA that collects fees; validated via seeds.
+    #[account(
+        mut,
+        seeds = [b"fee_vault"],
+        bump,
+    )]
+    pub fee_vault: SystemAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -33,23 +37,18 @@ pub fn register_skill(ctx: Context<RegisterSkill>, name: String, author: String)
     require!(!name.chars().any(|c| c.is_uppercase()), SkillHubError::NameNotLowercase);
     require!(author.len() <= MAX_AUTHOR_LEN, SkillHubError::AuthorTooLong);
 
-    let (fee, expected_recipient) = {
+    let fee = {
         let config = ctx.accounts.config.load()?;
-        (config.register_fee, config.fee_recipient)
+        config.register_fee
     };
-    require_keys_eq!(
-        ctx.accounts.fee_recipient.key(),
-        expected_recipient,
-        SkillHubError::InvalidFeeRecipient
-    );
 
-    if fee > 0 && ctx.accounts.fee_recipient.key() != ctx.accounts.authority.key() {
+    if fee > 0 {
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 ctx.accounts.system_program.to_account_info(),
                 anchor_lang::system_program::Transfer {
                     from: ctx.accounts.authority.to_account_info(),
-                    to: ctx.accounts.fee_recipient.to_account_info(),
+                    to: ctx.accounts.fee_vault.to_account_info(),
                 },
             ),
             fee,

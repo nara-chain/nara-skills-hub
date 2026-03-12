@@ -18,9 +18,10 @@ pub struct InitConfig<'info> {
 }
 
 pub fn init_config(ctx: Context<InitConfig>) -> Result<()> {
+    let (vault_pda, _) = Pubkey::find_program_address(&[b"fee_vault"], ctx.program_id);
     let mut config = ctx.accounts.config.load_init()?;
     config.admin = ctx.accounts.admin.key();
     config.register_fee = DEFAULT_REGISTER_FEE;
-    config.fee_recipient = ctx.accounts.admin.key();
+    config.fee_vault = vault_pda;
     Ok(())
 }

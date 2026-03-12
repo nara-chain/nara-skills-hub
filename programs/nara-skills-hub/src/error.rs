@@ -34,8 +34,10 @@ pub enum SkillHubError {
     ContentNotFound,
     #[msg("Cannot perform this operation while a pending buffer exists")]
     HasPendingBuffer,
-    #[msg("Fee recipient does not match config.fee_recipient")]
-    InvalidFeeRecipient,
+    #[msg("Fee vault does not match the expected PDA")]
+    InvalidFeeVault,
+    #[msg("Insufficient vault balance for withdrawal")]
+    InsufficientVaultBalance,
     #[msg("Author name too long: max 64 bytes")]
     AuthorTooLong,
     #[msg("Name must be lowercase: uppercase letters are not allowed")]

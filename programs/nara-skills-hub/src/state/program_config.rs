@@ -5,12 +5,12 @@ use anchor_lang::prelude::*;
 #[account(zero_copy)]
 #[repr(C)]
 pub struct ProgramConfig {
-    /// Who may call update_admin / update_fee_recipient / update_register_fee.
+    /// Who may call update_admin / update_register_fee / withdraw_fees.
     pub admin: Pubkey,
     /// SOL fee (in lamports) charged on every `register_skill`. 0 = free.
     pub register_fee: u64,
-    /// Account that receives registration fees. Defaults to admin at init.
-    pub fee_recipient: Pubkey,
+    /// PDA vault that collects registration fees. seeds = [b"fee_vault"], immutable.
+    pub fee_vault: Pubkey,
     pub _reserved: [u8; 64],
 }
 
