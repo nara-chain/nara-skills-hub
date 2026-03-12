@@ -69,7 +69,7 @@ In most agent stacks, skills are still treated as opaque config blobs:
 
 All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte reserved space for future extensibility.
 
-- `ProgramConfig` — PDA (`["config"]`): admin, registration fee, fee recipient
+- `ProgramConfig` — PDA (`["config"]`): admin, registration fee, fee vault PDA
 - `SkillRecord` — PDA (`["skill", name]`): canonical skill state (authority / name / author / version / content / pending_buffer)
 - `SkillDescription` — PDA (`["desc", skill_key]`): human-readable description (max 512 bytes)
 - `SkillMetadata` — PDA (`["meta", skill_key]`): extensible JSON metadata (max 800 bytes)
@@ -84,20 +84,20 @@ All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte re
 
 | # | Instruction | Capability |
 |---|-------------|------------|
-| 1 | `init_config()` | Initializes config; caller becomes admin; default fee = `1_000_000_000` lamports |
+| 1 | `init_config()` | Initializes config; caller becomes admin; default fee = `1_000_000_000` lamports; computes fee vault PDA |
 | 2 | `update_admin(new_admin)` | Transfers admin authority |
-| 3 | `update_fee_recipient(new_recipient)` | Updates registration fee recipient |
-| 4 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
-| 5 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, **lowercase only**, author max 64 bytes) |
-| 6 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
-| 7 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
-| 8 | `init_buffer(name, total_len)` | Initializes upload buffer |
-| 9 | `write_to_buffer(name, offset, data)` | Sequential chunk writes with strict offset checks |
-|10 | `finalize_skill_new(name)` | Finalizes first publish and sets `version = 1` |
-|11 | `finalize_skill_update(name)` | Finalizes update, closes old content, increments version |
-|12 | `close_buffer(name)` | Aborts upload and closes pending buffer |
-|13 | `update_metadata(name, data)` | Creates or updates metadata JSON (max 800 bytes) |
-|14 | `delete_skill(name)` | Closes related accounts and reclaims rent |
+| 3 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
+| 4 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, **lowercase only**, author max 64 bytes); fee goes to vault PDA |
+| 5 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
+| 6 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
+| 7 | `init_buffer(name, total_len)` | Initializes upload buffer |
+| 8 | `write_to_buffer(name, offset, data)` | Sequential chunk writes with strict offset checks |
+| 9 | `finalize_skill_new(name)` | Finalizes first publish and sets `version = 1` |
+|10 | `finalize_skill_update(name)` | Finalizes update, closes old content, increments version |
+|11 | `close_buffer(name)` | Aborts upload and closes pending buffer |
+|12 | `update_metadata(name, data)` | Creates or updates metadata JSON (max 800 bytes) |
+|13 | `delete_skill(name)` | Closes related accounts and reclaims rent |
+|14 | `withdraw_fees(amount)` | Admin withdraws lamports from fee vault PDA |
 
 ---
 
@@ -109,7 +109,7 @@ All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte re
 init_config()
 └─ admin = caller
 └─ register_fee = 1_000_000_000 lamports
-└─ fee_recipient = caller
+└─ fee_vault = PDA(seeds=[b"fee_vault"])
 ```
 
 ### 5.2 Mint a Skill Identity (Register + Publish)
@@ -179,7 +179,8 @@ Together these invariants define a recoverable, upgradeable, and governable skil
 - `InvalidBufferSize` / `BufferMismatch`
 - `InvalidContentOwner` / `InvalidContentSize` / `ContentMismatch`
 - `ContentAlreadyExists` / `ContentNotFound` / `ContentAlreadyInitialized` / `ContentSelfReference`
-- `InvalidFeeRecipient`
+- `InvalidFeeVault`
+- `InsufficientVaultBalance`
 
 Full definitions: `programs/nara-skills-hub/src/error.rs`.
 
@@ -201,8 +202,8 @@ programs/nara-skills-hub/src/
 └── instructions/
     ├── init_config.rs
     ├── update_admin.rs
-    ├── update_fee_recipient.rs
     ├── update_register_fee.rs
+    ├── withdraw_fees.rs
     ├── register_skill.rs
     ├── set_description.rs
     ├── transfer_authority.rs
