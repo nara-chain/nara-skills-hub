@@ -1,9 +1,9 @@
-# Nara Skill Hub
+# Nara SkillHub
 
 > **Prompt Infrastructure for Autonomous Agents**  
 > Upgrading AI skills from repo-bound strings into verifiable on-chain assets.
 
-`Nara Skill Hub` is an on-chain registry built with Solana + Anchor 0.32.1 for registering, versioning, updating, discovering, and governing AI agent skills.
+`Nara SkillHub` is an on-chain registry built with Solana + Anchor 0.32.1 for registering, versioning, updating, discovering, and governing AI agent skills.
 
 - **Program ID**: `SkiLLHub11111111111111111111111111111111111`
 - **Positioning Keywords**: Skill Assetization / Prompt Liquidity / On-chain Capability Layer / Verifiable Agent Infrastructure
@@ -19,7 +19,7 @@ In most agent stacks, skills are still treated as opaque config blobs:
 - Lacking a shared namespace and hard to compose
 - Missing durable incentive rails for quality contributors
 
-`Nara Skill Hub` addresses this with four protocol-level ideas:
+`Nara SkillHub` addresses this with four protocol-level ideas:
 
 1. **Skill Assetization**
    Skills become on-chain state objects with name, author, description, content, and version.
@@ -236,4 +236,4 @@ Requirements:
 
 ## 10. One-Liner
 
-**Nara Skill Hub transforms agent skills from app-layer config into verifiable on-chain capability assets, powering the liquidity layer for next-generation autonomous agents.**
+**Nara SkillHub transforms agent skills from app-layer config into verifiable on-chain capability assets, powering the liquidity layer for next-generation autonomous agents.**
