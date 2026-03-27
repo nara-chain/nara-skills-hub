@@ -87,7 +87,7 @@ All accounts use `#[account(zero_copy)]` with `#[repr(C)]` layout and 64-byte re
 | 1 | `init_config()` | Initializes config; caller becomes admin; default fee = `1_000_000_000` lamports; computes fee vault PDA |
 | 2 | `update_admin(new_admin)` | Transfers admin authority |
 | 3 | `update_register_fee(new_fee)` | Updates registration fee (`0` means free registration) |
-| 4 | `register_skill(name, author)` | Registers a skill (name 5–32 bytes, **lowercase only**, author max 64 bytes); fee goes to vault PDA |
+| 4 | `register_skill(name, author)` | Registers a skill (name 4–32 bytes, **lowercase only**, author max 64 bytes); fee goes to vault PDA |
 | 5 | `set_description(name, description)` | Creates or updates description (max 512 bytes) |
 | 6 | `transfer_authority(name, new_authority)` | Transfers skill ownership (requires no pending buffer) |
 | 7 | `init_buffer(name, total_len)` | Initializes upload buffer |

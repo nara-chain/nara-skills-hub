@@ -23,7 +23,7 @@ pub struct SkillRecord {
     pub name_len: u16,
     /// Length of the author stored in the `author` array.
     pub author_len: u16,
-    /// Globally unique name (min 5 bytes, max 32 bytes).
+    /// Globally unique name (min 4 bytes, max 32 bytes).
     pub name: [u8; 32],
     /// Display name of the skill author (max 64 bytes).
     pub author: [u8; 64],

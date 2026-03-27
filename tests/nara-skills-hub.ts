@@ -228,9 +228,9 @@ describe("nara-skills-hub", () => {
       }
     });
 
-    it("rejects names shorter than 5 bytes (NameTooShort)", async () => {
+    it("rejects names shorter than 4 bytes (NameTooShort)", async () => {
       try {
-        await doRegisterSkill("abcd");
+        await doRegisterSkill("abc");
         expect.fail("expected error");
       } catch (e: any) {
         expect(e.error?.errorCode?.code ?? e.message).to.include("NameTooShort");

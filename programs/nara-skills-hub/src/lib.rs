@@ -9,7 +9,7 @@ pub mod state;
 
 use instructions::*;
 
-pub const MIN_NAME_LEN: usize = 5;
+pub const MIN_NAME_LEN: usize = 4;
 pub const MAX_AUTHOR_LEN: usize = 64;
 pub const DEFAULT_REGISTER_FEE: u64 = 1_000_000_000; // 1 NARA in lamports
 
